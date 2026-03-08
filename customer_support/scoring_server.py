@@ -77,7 +77,7 @@ SCORES_DIR      = os.path.join(BASE_DIR, "file_scores")
 os.makedirs(SCORES_DIR, exist_ok=True)
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],allow_credentials=False)
 client = Groq(api_key=GROQ_API_KEY)
 
 
