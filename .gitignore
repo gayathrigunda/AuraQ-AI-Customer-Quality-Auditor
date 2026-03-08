@@ -1,9 +1,19 @@
 # Ignore Python virtual environment
+venv/
+node_modules/
 newenv/
 
 # Ignore Python bytecode
 __pycache__/
 *.pyc
+.env
+file_scores/
+file_summaries/
+*.csv
+*.mp3
+*.wav
+*.m4a 
+*.mp4 
 *.pyo
 
 # Ignore SQLite DB if you want
