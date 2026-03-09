@@ -485,13 +485,15 @@ function Dashboard() {
         setActivePage={setActivePage}
         onDownloadClick={() => setShowModal(true)}
       />
-      <CenterPanel
-        activePage={activePage}
-        onFileUploaded={() => setFileUploaded(true)}
-        onReportData={(data) => setReportData(prev => ({ ...prev, ...data }))}
-      />
-      {fileUploaded && activePage === 'home' && (
-        <div className="hidden lg:flex">
+      <div className={`${activePage === ('analysis' as any) ? 'hidden lg:flex flex-1' : 'flex flex-1'}`}>
+        <CenterPanel
+          activePage={activePage}
+          onFileUploaded={() => setFileUploaded(true)}
+          onReportData={(data) => setReportData(prev => ({ ...prev, ...data }))}
+        />
+      </div>
+      {fileUploaded && (activePage === 'home' || activePage === ('analysis' as any)) && (
+        <div className={activePage === ('analysis' as any) ? 'flex w-full lg:w-auto' : 'hidden lg:flex'}>
           <RightSidebar onReportData={(data) => setReportData(prev => ({ ...prev, ...data }))} />
         </div>
       )}
@@ -584,6 +586,7 @@ function Dashboard() {
         </div>
       )}
     {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#0b1224] border-t border-white/10 flex md:hidden z-50">
         <button
           onClick={() => setActivePage('home')}
@@ -608,6 +611,14 @@ function Dashboard() {
         >
           <span className="text-lg">📊</span>
           Reports
+        </button>
+        <button
+          onClick={() => setActivePage('analysis' as any)}
+          className={`flex-1 flex flex-col items-center py-3 text-xs gap-1
+            ${activePage === 'analysis' ? 'text-blue-400' : 'text-slate-500'}`}
+        >
+          <span className="text-lg">📊</span>
+          Analysis
         </button>
         <button
           onClick={() => setShowModal(true)}
