@@ -124,7 +124,8 @@ function LandingPage() {
 
       {/* HERO */}
       <div style={{ position:'relative', zIndex:1, minHeight:'100vh', display:'flex', flexDirection:'column',
-        alignItems:'center', justifyContent:'center', textAlign:'center', padding:'120px 40px 80px' }}>
+        alignItems:'center', justifyContent:'center',
+        textAlign:'center', padding:'80px 20px 40px' }}>
 
         <div className="hero-badge" style={{ display:'inline-flex', alignItems:'center', gap:8,
           padding:'6px 16px', background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.2)',
@@ -135,7 +136,7 @@ function LandingPage() {
         </div>
 
         {/* Animated SVG Logo */}
-        <div className="hero-logo" style={{ width:'min(480px,90vw)', marginBottom:16, filter:'drop-shadow(0 0 40px rgba(59,130,246,0.25))' }}>
+        <div className="hero-logo" style={{ width:'min(320px,85vw)', marginBottom:12, filter:'drop-shadow(0 0 40px rgba(59,130,246,0.25))' }}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 160" width="100%" height="auto">
             <defs>
               <radialGradient id="hOrbGlow" cx="50%" cy="50%" r="50%">
@@ -231,7 +232,7 @@ function LandingPage() {
         </h1>
 
         <p className="hero-sub" style={{ fontSize:'clamp(15px,2vw,18px)', color:'#64748b',
-          maxWidth:520, lineHeight:1.7, marginBottom:44, fontWeight:300 }}>
+          maxWidth:520, lineHeight:1.7, marginBottom:28, fontWeight:300 }}>
           AuraQ listens to your customer calls and instantly scores Empathy, Compliance and Resolution
           — giving managers real intelligence, not just transcripts.
         </p>
