@@ -281,7 +281,7 @@ function LandingPage() {
         <p style={{ fontSize:16, color:'#64748b', maxWidth:500, lineHeight:1.75, fontWeight:300, marginBottom:48 }}>
           From raw audio to actionable quality scores — AuraQ handles the full pipeline automatically.
         </p>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))', gap:20 }}>
           {[
             { icon:'🎙️', title:'Auto Transcription',   desc:'Upload audio and get speaker-separated transcripts powered by Whisper AI in seconds.' },
             { icon:'❤️', title:'Empathy Scoring',       desc:'Detects emotional intelligence across 4 call stages — Opening, Mid-Call, Issue and Closing.' },
@@ -314,8 +314,9 @@ function LandingPage() {
           fontWeight:900, lineHeight:1.1, letterSpacing:-1, marginBottom:48 }}>
           Three steps to<br/>complete call intelligence.
         </h2>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:2,
-          background:'rgba(59,130,246,0.08)', borderRadius:20, overflow:'hidden' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(1,1fr)', gap:2,
+          background:'rgba(59,130,246,0.08)', borderRadius:20, overflow:'hidden' }}
+          className="md:grid-cols-3" >
           {[
             { num:'01', icon:'📁', title:'Upload Your Call',   desc:'Drop in any audio file (.mp3, .m4a, .wav) or text transcript (.txt, .csv).' },
             { num:'02', icon:'🧠', title:'AI Analyzes',        desc:'Llama 3.3 70B scores Empathy, Compliance and Resolution with strict criteria.' },
