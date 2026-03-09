@@ -133,7 +133,7 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
   const confScore  = parsePercent(emotionData?.confidence   || '0%');
 
   return (
-    <div className="w-80 bg-[#0b1224] border-l border-white/5 h-screen overflow-y-auto flex flex-col relative shadow-2xl">
+    <div className="w-full md:w-80 bg-[#0b1224] border-l border-white/5 h-screen overflow-y-auto flex flex-col relative shadow-2xl">
       <div className="p-5 space-y-4">
 
         {/* Header */}
