@@ -54,7 +54,7 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
 
   const fetchAudioSummary = async () => {
       try {
-        const res  = await fetch(`https://auraq-ai-customer-quality-auditor-production.up.railway.app/get-summary?t=${Date.now()}`);
+        const res  = await fetch(`https://auraq-audio-server.onrender.com/get-summary?t=${Date.now()}`);
         const data = await res.json();
         const s = data.summary || 'No summary found.';
         setSummary(s);
@@ -64,7 +64,7 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
 
   const fetchTextSummary = async () => {
       try {
-        const res  = await fetch(`https://upbeat-essence-production-929d.up.railway.app/get-text-summary?t=${Date.now()}`);
+        const res  = await fetch(`https://auraq-text-server.onrender.com/get-text-summary?t=${Date.now()}`);
         if (!res.ok) {
           setSummary('No summary available.');
           return;
@@ -79,7 +79,7 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
 
   const fetchQualityScores = async () => {
     try {
-      const res = await fetch('https://charming-flexibility-production.up.railway.app/get-quality-scores');
+      const res = await fetch('https://auraq-scoring-server.onrender.com/get-quality-scores');
       if (res.ok) setScores(await res.json());
     } catch {}
   };
@@ -87,7 +87,7 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
   const fetchEmotionAndSatisfaction = async (source: 'audio' | 'text' = 'audio') => {
     setAnalysisLoading(true);
     try {
-      const res = await fetch('https://caring-bravery-production.up.railway.app/analyze', {
+      const res = await fetch('https://auraq-emotion-satisfaction-server.onrender.com/analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ source }),
