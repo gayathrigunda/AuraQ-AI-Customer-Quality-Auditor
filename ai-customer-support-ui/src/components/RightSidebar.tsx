@@ -44,12 +44,18 @@ interface RightSidebarProps {
 }
 
 function RightSidebar({ onReportData }: RightSidebarProps) {
-  const [summary, setSummary]           = useState('Waiting for analysis...');
+  const [summary, setSummary] = useState(() => {
+    try { return localStorage.getItem('auraq_summary') || 'Waiting for analysis...'; } catch { return 'Waiting for analysis...'; }
+  });
   const [loading, setLoading]           = useState(false);
   const [showDetails, setShowDetails]   = useState(false);
   const [scores, setScores]             = useState({ empathy: 0, compliance: 0, resolution: 0, reasoning: '' });
-  const [emotionData, setEmotionData]   = useState<EmotionData | null>(null);
-  const [satData, setSatData]           = useState<SatisfactionData | null>(null);
+  const [emotionData, setEmotionData] = useState<EmotionData | null>(() => {
+    try { const d = localStorage.getItem('auraq_emotion'); return d ? JSON.parse(d) : null; } catch { return null; }
+  });
+  const [satData, setSatData] = useState<SatisfactionData | null>(() => {
+    try { const d = localStorage.getItem('auraq_sat'); return d ? JSON.parse(d) : null; } catch { return null; }
+  });
   const [analysisLoading, setAnalysisLoading] = useState(false);
 
   const fetchAudioSummary = async () => {
@@ -58,6 +64,7 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
         const data = await res.json();
         const s = data.summary || 'No summary found.';
         setSummary(s);
+        localStorage.setItem('auraq_summary', s);
         onReportData?.({ summary: s });
       } catch { setSummary('Error fetching summary.'); }
     };
@@ -95,12 +102,11 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
       if (res.ok) {
         const data = await res.json();
         setEmotionData(data.emotion_analysis);
+        localStorage.setItem('auraq_emotion', JSON.stringify(data.emotion_analysis));
+        onReportData?.({ emotionData: data.emotion_analysis });
         setSatData(data.satisfaction_analysis);
-        // Pass to Dashboard for PDF
-        onReportData?.({
-          emotionData: data.emotion_analysis,
-          satData:     data.satisfaction_analysis,
-        });
+        localStorage.setItem('auraq_sat', JSON.stringify(data.satisfaction_analysis));
+        onReportData?.({ satData: data.satisfaction_analysis });
       }
     } catch {}
     finally { setAnalysisLoading(false); }
