@@ -116,6 +116,8 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
   useEffect(() => {
   const restoreData = async () => {
     try {
+      console.log('RESTORE: emotion from storage:',localStorage.getItem('auraq_emotion'));
+      console.log('RESTORE: sat from storage:', localStorage.getItem('auraq_sat'));
       await fetchAudioSummary();
       await fetchQualityScores();
       const emotionRes = await fetch('https://auraq-emotion-satisfaction-server.onrender.com/get-analysis');

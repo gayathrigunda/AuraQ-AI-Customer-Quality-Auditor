@@ -21,10 +21,12 @@ export interface ReportData {
 
 interface HistoryFile {
   filename:   string;
-  saved_at:   string;
-  empathy:    number;
-  compliance: number;
-  resolution: number;
+  file_name?: string;
+  saved_at?:  string;
+  timestamp?: string;
+  empathy?:   number;
+  compliance?: number;
+  resolution?: number;
 }
 
 function Dashboard() {
@@ -41,11 +43,21 @@ function Dashboard() {
   });
 
   const fetchHistoryFiles = async () => {
-    try {
-      const res = await fetch('https://auraq-scoring-server.onrender.com/list-file-scores');
-      if (res.ok) setHistoryFiles(await res.json());
-    } catch {}
-  };
+  try {
+    const [audioRes, textRes] = await Promise.all([
+      fetch("https://auraq-audio-server.onrender.com/history").catch(() => null),
+      fetch("https://auraq-text-server.onrender.com/history").catch(() => null),
+    ]);
+    const audioData = audioRes?.ok ? await audioRes.json() : [];
+    const textData  = textRes?.ok  ? await textRes.json()  : [];
+    const combined  = [...audioData, ...textData].sort((a: any, b: any) => {
+      const tA = new Date(a.saved_at || a.timestamp || 0).getTime();
+      const tB = new Date(b.saved_at || b.timestamp || 0).getTime();
+      return tB - tA;
+    });
+    setHistoryFiles(combined);
+  } catch {}
+};
 
   useEffect(() => {
     if (showModal) fetchHistoryFiles();
