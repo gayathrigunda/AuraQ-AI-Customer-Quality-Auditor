@@ -106,6 +106,29 @@ function RightSidebar({ onReportData }: RightSidebarProps) {
     finally { setAnalysisLoading(false); }
   };
 
+
+  useEffect(() => {
+  const restoreData = async () => {
+    try {
+      await fetchAudioSummary();
+      await fetchQualityScores();
+      const emotionRes = await fetch('https://auraq-emotion-satisfaction-server.onrender.com/get-analysis');
+      if (emotionRes.ok) {
+        const data = await emotionRes.json();
+        if (data.emotion_analysis) {
+          setEmotionData(data.emotion_analysis);
+          onReportData?.({ emotionData: data.emotion_analysis });
+        }
+        if (data.satisfaction_analysis) {
+          setSatData(data.satisfaction_analysis);
+          onReportData?.({ satData: data.satisfaction_analysis });
+        }
+      }
+    } catch {}
+  };
+  restoreData();
+}, []);
+
   useEffect(() => {
     const handleRefresh = async (e: any) => {
       const type = e.detail;
