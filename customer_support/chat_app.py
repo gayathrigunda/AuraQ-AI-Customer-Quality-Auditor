@@ -19,8 +19,8 @@ load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 # ---------------- CONFIG ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TRANSCRIPT_FILE = "text_transcript.csv"
-SUMMARY_FILE = "text_summaries.csv"
+TRANSCRIPT_FILE = "/tmp/text_transcript.csv"
+SUMMARY_FILE = "/tmp/text_summaries.csv"
 SUMMARIES_DIR=os.path.join(BASE_DIR,"file_summaries")
 os.makedirs(SUMMARIES_DIR,exist_ok=True)
 

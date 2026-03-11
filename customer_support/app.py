@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 # ---------------- CONFIG ----------------
-TRANSCRIPT_FILE = "transcriptions_with_speakers.csv"
-SUMMARY_FILE = "final_summaries.csv"
+TRANSCRIPT_FILE = "/tmp/transcriptions_with_speakers.csv"
+SUMMARY_FILE = "/tmp/final_summaries.csv"
 
 # Replace with your actual key
 
