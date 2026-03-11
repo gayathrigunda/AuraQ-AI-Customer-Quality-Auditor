@@ -1,7 +1,7 @@
 import os
 import csv
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # --- DEEPGRAM V3.11 MODULAR IMPORTS ---
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
@@ -150,7 +150,8 @@ async def process_upload(file: UploadFile = File(...)):
                 _json.dump({
                     "filename": file.filename,
                     "summary":  deepgram_summary,
-                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "saved_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d %H:%M:%S"),
+
                 }, f, indent=4)
         except Exception as e:
             print(f"Per-file summary save error: {e}")
