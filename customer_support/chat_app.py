@@ -179,6 +179,17 @@ async def upload_text(file: UploadFile = File(...)):
         df_t = pd.DataFrame(formatted)
         df_t.to_csv(TRANSCRIPT_FILE, index=False)
 
+        # Save per-file transcript
+        try:
+            TRANSCRIPTS_DIR = os.path.join(BASE_DIR, "file_transcripts")
+            os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
+            safe_name_t = re.sub(r'[^a-zA-Z0-9_\-]', '_', file.filename)
+            df_t.to_csv(os.path.join(TRANSCRIPTS_DIR, f"{safe_name_t}.csv"), index=False)
+        except Exception as e:
+            print(f"Per-file transcript save error: {e}")
+
+        # Append to summary history
+
         # Append to summary history
         file_exists = os.path.isfile(SUMMARY_FILE)
         with open(SUMMARY_FILE, mode="a", newline="", encoding="utf-8") as f:
@@ -222,15 +233,21 @@ async def get_text_transcript():
     return pd.read_csv(TRANSCRIPT_FILE).to_dict(orient="records")
 
 
-@app.get("/get-text-summary")
-async def get_text_summary():
-    if not os.path.exists(SUMMARY_FILE):
-        return {"summary": "No summary found."}
-    df = pd.read_csv(SUMMARY_FILE)
-    if df.empty:
-        return {"summary": "Empty history."}
-    latest = df.iloc[-1]["summary"]
-    return JSONResponse(content={"summary": str(latest)})
+@app.get("/get-file-transcript/{filename:path}")
+async def get_file_transcript(filename: str):
+    try:
+        from urllib.parse import unquote
+        decoded = unquote(filename)
+        safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', decoded)
+        path = os.path.join(BASE_DIR, "file_transcripts", f"{safe_name}.csv")
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            return df.to_dict(orient="records")
+        return []
+    except Exception as e:
+        print(f"File transcript fetch error: {e}")
+        return []
+    
 
 @app.get("/get-file-summary/{filename:path}")
 async def get_file_summary(filename: str):

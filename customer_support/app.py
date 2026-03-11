@@ -124,8 +124,22 @@ async def process_upload(file: UploadFile = File(...)):
         refined_data = format_for_ui(dg_raw)
 
         # 4. Save to CSV
+        # 4. Save to CSV
         df = pd.DataFrame(refined_data)
         df.to_csv(TRANSCRIPT_FILE, index=False)
+
+        # Save per-file transcript
+        try:
+            import re as _re
+            BASE = os.path.dirname(os.path.abspath(__file__))
+            TRANSCRIPTS_DIR = os.path.join(BASE, "file_transcripts")
+            os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
+            safe_name = _re.sub(r'[^a-zA-Z0-9_\-]', '_', file.filename)
+            df.to_csv(os.path.join(TRANSCRIPTS_DIR, f"{safe_name}.csv"), index=False)
+        except Exception as e:
+            print(f"Per-file transcript save error: {e}")
+
+        # 5. Update History
 
         # 5. Update History
         file_exists = os.path.isfile(SUMMARY_FILE)
@@ -174,24 +188,23 @@ async def get_transcript():
         print(f"Transcript fetch error: {e}")
         return []
 
-@app.get("/get-file-summary/{filename:path}")
-async def get_file_summary(filename: str):
+@app.get("/get-file-transcript/{filename:path}")
+async def get_file_transcript(filename: str):
     try:
-        import re as _re, json as _json
+        import re as _re
         from urllib.parse import unquote
-        # Decode URL encoding first, then convert to safe filename
         decoded = unquote(filename)
         safe_name = _re.sub(r'[^a-zA-Z0-9_\-]', '_', decoded)
         BASE = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(BASE, "file_summaries", f"{safe_name}.json")
-        print(f"DEBUG: Looking for summary at {path}")
+        path = os.path.join(BASE, "file_transcripts", f"{safe_name}.csv")
         if os.path.exists(path):
-            with open(path) as f:
-                return _json.load(f)
-        return {"summary": "No summary available."}
+            df = pd.read_csv(path)
+            df = df.where(pd.notnull(df), None)
+            return df.to_dict(orient="records")
+        return []
     except Exception as e:
-        print(f"Summary fetch error: {e}")
-        return {"summary": "No summary available."}
+        print(f"File transcript fetch error: {e}")
+        return []
 
 
 @app.get("/get-summary")
