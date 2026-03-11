@@ -104,8 +104,8 @@ function Dashboard() {
       const summaryData = summaryRes?.ok ? await summaryRes.json() : null;
 
       const transcriptRes = isAudioFile
-        ? await fetch(`https://auraq-audio-server.onrender.com/get-transcript?t=${Date.now()}`).catch(() => null)
-        : await fetch(`https://auraq-text-server.onrender.com/get-text-transcript?t=${Date.now()}`).catch(() => null);
+        ? await fetch(`https://auraq-audio-server.onrender.com/get-file-transcript/${encodeURIComponent(originalName)}?t=${Date.now()}`).catch(() => null)
+        : await fetch(`https://auraq-text-server.onrender.com/get-file-transcript/${encodeURIComponent(originalName)}?t=${Date.now()}`).catch(() => null);
       const transcriptData = transcriptRes?.ok ? await transcriptRes.json() : [];
 
       const summary = summaryData?.summary && summaryData.summary !== 'No summary available.'
@@ -148,8 +148,8 @@ function Dashboard() {
 
       // Fetch transcript only
       const transcriptRes = isAudioFile
-        ? await fetch(`https://auraq-audio-server.onrender.com/get-transcript?t=${Date.now()}`).catch(() => null)
-        : await fetch(`https://auraq-text-server.onrender.com/get-text-transcript?t=${Date.now()}`).catch(() => null);
+        ? await fetch(`https://auraq-audio-server.onrender.com/get-file-transcript/${encodeURIComponent(filename)}?t=${Date.now()}`).catch(() => null)
+        : await fetch(`https://auraq-text-server.onrender.com/get-file-transcript/${encodeURIComponent(filename)}?t=${Date.now()}`).catch(() => null);
       const transcriptData = transcriptRes?.ok ? await transcriptRes.json() : [];
 
       const children: any[] = [];
