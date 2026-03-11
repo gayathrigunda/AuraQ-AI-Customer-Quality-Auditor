@@ -71,6 +71,7 @@ function Dashboard() {
       const tB = new Date(b.saved_at || 0).getTime();
       return tB - tA;
     });
+    console.log('DOWNLOADS DATA:', combined);
 
     setHistoryFiles(combined);
   } catch {}
