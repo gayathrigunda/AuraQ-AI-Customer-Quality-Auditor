@@ -134,7 +134,7 @@ async def process_upload(file: UploadFile = File(...)):
             if not file_exists: writer.writeheader()
             writer.writerow({
                 "file_name": file.filename,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d %H:%M:%S"),
                 "summary": deepgram_summary,
             })
 
