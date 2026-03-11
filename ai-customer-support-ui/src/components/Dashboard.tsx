@@ -56,15 +56,15 @@ function Dashboard() {
     const combined = [...audioData, ...textData].map((item: any) => {
       const name = item.file_name || item.filename || '';
       const scoreMatch = scoresData.find((s: any) =>
-        s.filename === name || s.original_filename === name
+        s.filename?.trim().toLowerCase() === name?.trim().toLowerCase()
       );
       return {
         ...item,
-        filename: name,
-        empathy:    scoreMatch?.empathy,
-        compliance: scoreMatch?.compliance,
-        resolution: scoreMatch?.resolution,
-        saved_at:   item.saved_at || item.timestamp,
+        filename:   name,
+        empathy:    scoreMatch?.empathy    ?? undefined,
+        compliance: scoreMatch?.compliance ?? undefined,
+        resolution: scoreMatch?.resolution ?? undefined,
+        saved_at:   item.saved_at || item.timestamp || '',
       };
     }).sort((a: any, b: any) => {
       const tA = new Date(a.saved_at || 0).getTime();
