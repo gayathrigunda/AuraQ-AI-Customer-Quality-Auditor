@@ -167,23 +167,23 @@ async def analyze_quality(
             time.sleep(10)
 
             # Try per-file transcript first
-        import re as _re
-        safe_name = _re.sub(r'[^a-zA-Z0-9_\-]', '_', display_name)
-        per_file_path = os.path.join(BASE_DIR, "file_transcripts", f"{safe_name}.csv")
+            import re as _re
+            safe_name = _re.sub(r'[^a-zA-Z0-9_\-]', '_', display_name)
+            per_file_path = os.path.join(BASE_DIR, "file_transcripts", f"{safe_name}.csv")
 
-        transcript_path = per_file_path if os.path.exists(per_file_path) else TRANSCRIPT_FILE
+            transcript_path = per_file_path if os.path.exists(per_file_path) else TRANSCRIPT_FILE
 
-        if os.path.exists(transcript_path):
-            df   = pd.read_csv(transcript_path)
-            conv = "\n".join(
-                f"{row['speaker']}: {row['text']}"
-                for _, row in df.iterrows()
-                if str(row['text']).strip()
-            )
-            print(f"DEBUG: Transcript loaded from {transcript_path} — {len(conv)} chars")
-        else:
-            print("ERROR: No transcript CSV found after waiting")
-            return build_empty_response()
+            if os.path.exists(transcript_path):
+                df   = pd.read_csv(transcript_path)
+                conv = "\n".join(
+                    f"{row['speaker']}: {row['text']}"
+                    for _, row in df.iterrows()
+                    if str(row['text']).strip()
+                )
+                print(f"DEBUG: Transcript loaded from {transcript_path} — {len(conv)} chars")
+            else:
+                print("ERROR: No transcript CSV found after waiting")
+                return build_empty_response()
 
         # ── Step 3: guard empty content ──────────────────────────────
         conv = conv.strip()
