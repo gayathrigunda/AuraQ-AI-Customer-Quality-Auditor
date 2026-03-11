@@ -44,17 +44,34 @@ function Dashboard() {
 
   const fetchHistoryFiles = async () => {
   try {
-    const [audioRes, textRes] = await Promise.all([
+    const [audioRes, textRes, scoresRes] = await Promise.all([
       fetch("https://auraq-audio-server.onrender.com/history").catch(() => null),
       fetch("https://auraq-text-server.onrender.com/history").catch(() => null),
+      fetch("https://auraq-scoring-server.onrender.com/list-file-scores").catch(() => null),
     ]);
-    const audioData = audioRes?.ok ? await audioRes.json() : [];
-    const textData  = textRes?.ok  ? await textRes.json()  : [];
-    const combined  = [...audioData, ...textData].sort((a: any, b: any) => {
-      const tA = new Date(a.saved_at || a.timestamp || 0).getTime();
-      const tB = new Date(b.saved_at || b.timestamp || 0).getTime();
+    const audioData  = audioRes?.ok  ? await audioRes.json()  : [];
+    const textData   = textRes?.ok   ? await textRes.json()   : [];
+    const scoresData = scoresRes?.ok ? await scoresRes.json() : [];
+
+    const combined = [...audioData, ...textData].map((item: any) => {
+      const name = item.file_name || item.filename || '';
+      const scoreMatch = scoresData.find((s: any) =>
+        s.filename === name || s.original_filename === name
+      );
+      return {
+        ...item,
+        filename: name,
+        empathy:    scoreMatch?.empathy,
+        compliance: scoreMatch?.compliance,
+        resolution: scoreMatch?.resolution,
+        saved_at:   item.saved_at || item.timestamp,
+      };
+    }).sort((a: any, b: any) => {
+      const tA = new Date(a.saved_at || 0).getTime();
+      const tB = new Date(b.saved_at || 0).getTime();
       return tB - tA;
     });
+
     setHistoryFiles(combined);
   } catch {}
 };
@@ -539,7 +556,9 @@ function Dashboard() {
                 </div>
               ) : historyFiles.map((file, i) => {
                 const isText   = file.filename?.endsWith('.txt') || file.filename?.endsWith('.csv');
-                const avgScore = Math.round(((file.empathy + file.compliance + file.resolution) / 3) * 10);
+                const avgScore = (file.empathy && file.compliance && file.resolution)
+                  ? Math.round(((file.empathy + file.compliance + file.resolution) / 3) * 10)
+                  : null;
                 return (
                   <div key={i} className="bg-[#161e31] border border-white/5 rounded-2xl p-4 flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
