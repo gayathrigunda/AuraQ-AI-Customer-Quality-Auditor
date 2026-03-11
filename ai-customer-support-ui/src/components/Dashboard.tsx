@@ -548,24 +548,28 @@ function Dashboard() {
                         : <FileAudio size={18} className="text-blue-400" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-200 truncate">{file.filename}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{file.saved_at}</p>
+                      <p className="text-sm font-medium text-slate-200 truncate">{file.filename || file.file_name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{file.saved_at || file.timestamp}</p>
                       <div className="flex items-center gap-3 mt-1.5">
-                        <span className="text-[10px] text-blue-400 font-bold">E:{file.empathy}</span>
-                        <span className="text-[10px] text-indigo-400 font-bold">C:{file.compliance}</span>
-                        <span className="text-[10px] text-emerald-400 font-bold">R:{file.resolution}</span>
-                        <span className="text-[10px] text-slate-500">Avg: {avgScore}%</span>
+                        {file.empathy !== undefined && (
+                          <>
+                            <span className="text-[10px] text-blue-400 font-bold">E:{file.empathy}</span>
+                            <span className="text-[10px] text-indigo-400 font-bold">C:{file.compliance}</span>
+                            <span className="text-[10px] text-emerald-400 font-bold">R:{file.resolution}</span>
+                            <span className="text-[10px] text-slate-500">Avg: {avgScore}%</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col gap-2 flex-shrink-0">
                       {/* PDF button */}
                       <button
-                        onClick={() => generatePDF(file.filename)}
+                        onClick={() => generatePDF(file.filename || file.file_name)}
                         disabled={!!downloading}
                         className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-500
                           disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all"
                       >
-                        {downloading === file.filename
+                        {downloading === file.filename || downloading === file.file_name  
                           ? <Loader2 size={14} className="animate-spin" />
                           : <Download size={14} />}
                         {downloading === file.filename ? 'Generating...' : 'PDF'}
