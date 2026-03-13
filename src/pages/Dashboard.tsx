@@ -89,7 +89,7 @@ const Index = () => {
         </div>
 
         {/* Live Transcript */}
-        <div className="glass-card-solid rounded-2xl overflow-hidden">
+        <div className="rounded-2xl overflow-hidden bg-[hsl(210_20%_95%)] text-[hsl(222_47%_11%)]">
           <div className="px-6 pt-6 pb-4 flex items-center gap-2">
             <Mic className="h-4 w-4 text-primary" />
             <h3 className="text-xs font-heading font-bold uppercase tracking-[0.15em] text-primary">Live Transcript</h3>
@@ -101,7 +101,7 @@ const Index = () => {
                 placeholder="Search transcript..."
                 value={searchTranscript}
                 onChange={(e) => setSearchTranscript(e.target.value)}
-                className="pl-10 bg-secondary/40 border-border/20 rounded-xl"
+                className="pl-10 bg-white border-[hsl(220_13%_85%)] rounded-xl text-[hsl(222_47%_11%)]"
               />
             </div>
           </div>
@@ -113,11 +113,11 @@ const Index = () => {
                     {entry.speaker === "agent" ? (
                       <>
                         <span className="text-[11px] font-bold uppercase tracking-wider text-primary">Agent</span>
-                        <span className="text-[11px] text-muted-foreground/40">{entry.timestamp}</span>
+                        <span className="text-[11px] text-[hsl(220_13%_55%)]">{entry.timestamp}</span>
                       </>
                     ) : (
                       <>
-                        <span className="text-[11px] text-muted-foreground/40">{entry.timestamp}</span>
+                        <span className="text-[11px] text-[hsl(220_13%_55%)]">{entry.timestamp}</span>
                         <span className="text-[11px] font-bold uppercase tracking-wider text-chart-4">Customer</span>
                       </>
                     )}
@@ -125,7 +125,7 @@ const Index = () => {
                   <div
                     className={`max-w-[80%] rounded-2xl px-5 py-3 text-sm leading-relaxed ${
                       entry.speaker === "agent"
-                        ? "bg-secondary/60 text-foreground/90 rounded-tl-md"
+                        ? "bg-[hsl(210_20%_88%)] text-[hsl(222_47%_11%)] rounded-tl-md"
                         : "bg-gradient-to-r from-primary to-primary/80 text-white rounded-tr-md"
                     }`}
                   >
