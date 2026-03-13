@@ -1,9 +1,9 @@
 import { AppLayout } from "@/components/AppLayout";
 import { mockAudits, type QualityScore } from "@/lib/mock-data";
-import { Heart, Shield, CheckCircle, Zap, RefreshCw, CircleDot, TrendingUp, MessageSquare } from "lucide-react";
+import { Heart, Shield, CheckCircle, Zap, RefreshCw, CircleDot, TrendingUp, MessageSquare, Download, Smile, ThumbsUp, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
 } from "recharts";
 
 const selected = mockAudits[0];
