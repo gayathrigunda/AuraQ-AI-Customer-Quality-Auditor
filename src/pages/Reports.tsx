@@ -32,6 +32,11 @@ const complianceBarData = [
   { step: "S3", score: 9 }, { step: "S4", score: 8 },
 ];
 
+const resolutionVelocityData = [
+  { step: "Action Taken", score: 9 },
+  { step: "Confirmation", score: 8 },
+];
+
 const Reports = () => {
   return (
     <AppLayout>
