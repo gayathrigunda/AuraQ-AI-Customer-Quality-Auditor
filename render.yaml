@@ -36,12 +36,15 @@ services:
     name: auraq-frontend
     env: node
     plan: free
-    workingDirectory: aura-listen-insights
-    buildCommand: npm ci && npm run build
-    publishPath: dist
+    # root must contain the package.json and Vite config
+    root: clean-project
+    buildCommand: cd clean-project && npm ci --include=dev && npm run build
+    publishPath: clean-project/dist
     envVars:
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
       - key: VITE_AUDIO_API
-        value: https://auraq-audio-api.onrender.com
+        value: https://auraq-audio-1.onrender.com
       - key: VITE_CHAT_API
         value: https://auraq-chat-api.onrender.com
       - key: VITE_QUALITY_API

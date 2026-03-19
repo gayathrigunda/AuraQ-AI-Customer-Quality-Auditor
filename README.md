@@ -1,184 +1,73 @@
-📞 Customer Support Quality Auditor
-📌 Project Overview
+# Welcome to your Lovable project
 
-Customer Support Quality Auditor is an AI-powered system developed to automate the analysis of customer support calls.
+## Project info
 
-The system performs:
+**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
 
-🎙️ Call transcription (Speech → Text)
+## How can I edit this code?
 
-📝 Call summarization (Text → Short Summary)
+There are several ways of editing your application.
 
-📊 Structured output storage in CSV format
+**Use Lovable**
 
-This helps organizations quickly evaluate customer interactions and improve service quality.
+Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
 
-🚀 Features
+Changes made via Lovable will be committed automatically to this repo.
 
-✅ Converts customer call audio to text
+**Use your preferred IDE**
 
-✅ Stores transcriptions in CSV
+If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
-✅ Generates concise AI-powered summaries
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
-✅ Uses Hugging Face Large Language Model (LLM)
+Follow these steps:
 
-✅ Handles multiple call logs automatically
+```sh
+# Step 1: Clone the repository using the project's Git URL.
+git clone <YOUR_GIT_URL>
 
-✅ Saves final summaries in structured format
+# Step 2: Navigate to the project directory.
+cd <YOUR_PROJECT_NAME>
 
-✅ Django-based project structure
+# Step 3: Install the necessary dependencies.
+npm i
 
-🧠 AI Models Used
-1️⃣ Speech-to-Text
+# Step 4: Start the development server with auto-reloading and an instant preview.
+npm run dev
+```
 
-Used in:
+**Edit a file directly in GitHub**
 
-transcribe.py
+- Navigate to the desired file(s).
+- Click the "Edit" button (pencil icon) at the top right of the file view.
+- Make your changes and commit the changes.
 
+**Use GitHub Codespaces**
 
-Purpose:
-Convert customer support call recordings into text format.
+- Navigate to the main page of your repository.
+- Click on the "Code" button (green button) near the top right.
+- Select the "Codespaces" tab.
+- Click on "New codespace" to launch a new Codespace environment.
+- Edit files directly within the Codespace and commit and push your changes once you're done.
 
-2️⃣ Text Summarization
+## What technologies are used for this project?
 
-Model Used:
-facebook/bart-large-cnn
+This project is built with:
 
-Provider:
-Hugging Face Inference API (Router)
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
 
-Purpose:
-Generate short, clear summaries (6–8 words) from call logs.
+## How can I deploy this project?
 
-🛠️ Tech Stack
+Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
-Python 3.10+
+## Can I connect a custom domain to my Lovable project?
 
-Django
+Yes, you can!
 
-Hugging Face Inference API
+To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
-Requests library
-
-CSV handling
-
-SQLite3
-
-Virtual Environment (venv)
-
-📂 Project Structure
-customer-support-quality-auditor/
-│
-├── customer_support/
-│   ├── calls/
-│   ├── members/
-│   ├── chat_summary.py
-│   ├── summarize.py
-│   ├── transcribe.py
-│   ├── transcriptions.csv
-│   ├── final_summaries.csv
-│   ├── db.sqlite3
-│
-├── newenv/
-├── .env
-└── manage.py
-
-🔄 System Workflow
-Step 1: Transcription
-
-Audio files → transcribe.py
-Output → transcriptions.csv
-
-Step 2: Summarization
-
-Text from transcriptions.csv → summarize.py
-Output → final_summaries.csv
-
-⚙️ Installation & Setup
-1️⃣ Create Virtual Environment
-python -m venv newenv
-
-
-Activate:
-
-Windows:
-
-newenv\Scripts\activate
-
-2️⃣ Install Dependencies
-pip install requests django
-
-3️⃣ Set Hugging Face API Token
-
-⚠️ Never hardcode tokens.
-
-Set environment variable:
-
-Windows:
-
-setx HF_TOKEN "your_token_here"
-
-
-Mac/Linux:
-
-export HF_TOKEN="your_token_here"
-
-▶️ Running the Project
-Run Transcription
-python transcribe.py
-
-Run Summarization
-python summarize.py
-
-Run chat_summary
-python chat_summary.py
-
-📊 Example
-Input (Call Log)
-Customer was charged twice and requested refund.
-Agent confirmed refund within 3-5 days.
-
-Output (Summary)
-Double charge refund processing
-
-🎯 Use Cases
-
-Customer Support Centers
-
-Call Quality Monitoring
-
-CRM Systems
-
-Helpdesk Automation
-
-AI-powered Call Auditing
-
-🔐 Security Note
-
-API tokens must be stored in .env
-
-Do NOT commit secrets to GitHub
-
-Rotate exposed tokens immediately
-
-📈 Future Enhancements
-
-Sentiment Analysis
-
-Complaint Category Classification
-
-Real-time Dashboard
-
-Call Quality Scoring
-
-Web Interface for Report Viewing
-
-Cloud Deployment
-
-👨‍💻 Internship Project
-
-Developed as part of the Infosys Internship Program
-
-Project Title:
-Customer Support Quality Auditor
+Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
