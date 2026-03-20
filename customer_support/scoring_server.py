@@ -8,15 +8,19 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
+from dotenv import load_dotenv
+from pathlib import Path
 
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env") 
 
 # --- CONFIGURATION ---
 # Load sensitive keys from the environment (so they are not committed into source control)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("Missing required env var: GROQ_API_KEY")
-TRANSCRIPT_FILE = "transcriptions_with_speakers.csv"
-SCORES_FILE     = "quality_scores.json"
+TRANSCRIPT_FILE     = "transcriptions_with_speakers.csv"
+SCORES_FILE         = "quality_scores.json"
+SCORES_HISTORY_FILE = "quality_scores_history.json"   # appended per file, drives aggregation
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -441,6 +445,120 @@ def enrich_emotion(result: dict) -> dict:
 
 
 # ==============================================================================
+# HISTORY + AGGREGATE HELPERS
+# ==============================================================================
+
+# Numeric score keys that can be meaningfully averaged
+_SCALAR_KEYS = ["empathy", "compliance", "resolution", "efficiency", "efficiency_score",
+                "avg_response_time", "emotion_confidence", "satisfaction_confidence",
+                "satisfaction_percentage"]
+
+# Sub-array keys — list of {label_key: str, score: int} dicts
+_ARRAY_KEYS = [
+    ("empathy_timeline",    "stage"),
+    ("compliance_steps",    "step"),
+    ("resolution_progress", "stage"),
+]
+
+# Bias sub-keys
+_BIAS_KEYS = ["name_neutrality", "language_neutrality", "tone_consistency",
+              "equal_effort", "overall_fairness"]
+
+
+def _append_to_history(result: dict, filename: str) -> None:
+    """Append a single call's scores to the history file."""
+    history: list = []
+    if os.path.exists(SCORES_HISTORY_FILE):
+        try:
+            with open(SCORES_HISTORY_FILE, "r") as f:
+                history = json.load(f)
+        except Exception:
+            history = []
+    history.append({
+        "file_name": filename,
+        "timestamp": datetime.now().isoformat(),
+        **result,
+    })
+    with open(SCORES_HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
+    print(f"  History now has {len(history)} entries.")
+
+
+def _compute_aggregate(history: list) -> dict:
+    """
+    Average all numeric scores across every entry in history.
+    Sub-arrays (empathy_timeline etc.) are averaged element-by-element.
+    Categorical fields (emotion, satisfaction) use the most-common value.
+    The most-recent reasoning string is kept as-is.
+    """
+    if not history:
+        return {}
+
+    n = len(history)
+
+    # ── Scalar averages ───────────────────────────────────────────────────────
+    agg: dict = {}
+    for key in _SCALAR_KEYS:
+        vals = [e[key] for e in history if isinstance(e.get(key), (int, float))]
+        agg[key] = round(sum(vals) / len(vals), 2) if vals else 0
+
+    # ── Sub-array averages ────────────────────────────────────────────────────
+    for arr_key, label_key in _ARRAY_KEYS:
+        # Collect all entries that have this array
+        arrays = [e[arr_key] for e in history if isinstance(e.get(arr_key), list)]
+        if not arrays:
+            continue
+        # Use first entry as template for labels
+        template = arrays[0]
+        averaged = []
+        for item in template:
+            lbl    = item.get(label_key) or item.get("step") or item.get("stage")
+            scores = [
+                a[i]["score"]
+                for a in arrays
+                for i, elem in enumerate(a)
+                if (elem.get(label_key) or elem.get("step") or elem.get("stage")) == lbl
+                and isinstance(elem.get("score"), (int, float))
+            ]
+            averaged.append({
+                label_key: lbl,
+                "score": round(sum(scores) / len(scores), 1) if scores else 0,
+            })
+        agg[arr_key] = averaged
+
+    # ── Bias sub-key averages ─────────────────────────────────────────────────
+    bias_entries = [e["bias"] for e in history if isinstance(e.get("bias"), dict)]
+    if bias_entries:
+        bias_agg: dict = {}
+        for bk in _BIAS_KEYS:
+            vals = [b[bk] for b in bias_entries if isinstance(b.get(bk), (int, float))]
+            bias_agg[bk] = round(sum(vals) / len(vals), 1) if vals else 0
+        agg["bias"] = bias_agg
+
+    # ── Categorical: most-common value ───────────────────────────────────────
+    from collections import Counter
+    for cat_key in ["customer_emotion", "customer_satisfaction"]:
+        vals = [e[cat_key] for e in history if isinstance(e.get(cat_key), str)]
+        if vals:
+            agg[cat_key] = Counter(vals).most_common(1)[0][0]
+
+    # ── Emoji: derive from the most-common label ──────────────────────────────
+    emotion      = agg.get("customer_emotion", "Neutral").strip().lower()
+    satisfaction = agg.get("customer_satisfaction", "Neutral").strip().lower()
+    agg["customer_emotion_emoji"]      = EMOTION_EMOJI.get(emotion, "😐")
+    agg["customer_satisfaction_emoji"] = SATISFACTION_EMOJI.get(satisfaction, "😐")
+
+    # ── Meta ──────────────────────────────────────────────────────────────────
+    agg["file_count"] = n
+    agg["reasoning"]  = (
+        history[-1].get("reasoning", "")
+        or f"Aggregate of {n} call{'s' if n != 1 else ''}."
+    )
+
+    return agg
+
+
+# ==============================================================================
 # ENDPOINTS
 # ==============================================================================
 
@@ -547,68 +665,125 @@ async def analyze_quality(file: UploadFile = File(...)):
         if not conversation_text.strip():
             raise ValueError("No conversation content to analyse.")
 
-        # ── Normalise speaker labels (fixes Speaker 00/01 → AGENT/CUSTOMER) ──
-        conversation_text = normalize_speakers(conversation_text)
-        print(f"  Normalised transcript ({len(conversation_text)} chars, "
-              f"{len([l for l in conversation_text.splitlines() if l.strip()])} lines)")
-
-        # ── Bias / fairness (pure Python, no LLM, content-driven) ───────────
-        print("Running bias analysis…")
-        bias_scores = compute_bias_scores(conversation_text)
-        print(f"  bias → {bias_scores}")
-
-        # ── Efficiency score ─────────────────────────────────────────────────
-        if messages_list:
-            eff, avg_rt = efficiency_score_from_messages(messages_list)
-        else:
-            eff, avg_rt = estimate_efficiency_from_text(conversation_text)
-        print(f"  efficiency={eff}, avg_response_time={avg_rt}s")
-
-        # ── LLM quality + emotion scoring ────────────────────────────────────
-        # Light anonymisation before sending to LLM
-        anon = re.sub(r"\b\d{6,}\b", "[ACCOUNT]", conversation_text)
-        anon = re.sub(r"\b[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}\b", "[EMAIL]", anon)
-        anon = re.sub(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE]", anon)
-        llm_input = anon[:8000]
-
-        print("Running LLM evaluation…")
-        result_json = call_llama(build_prompt(llm_input))
-
-        # ── Merge computed scores ────────────────────────────────────────────
-        result_json["efficiency_score"]  = eff
-        result_json["avg_response_time"] = avg_rt
-        result_json["bias"]              = bias_scores
-        result_json = enrich_emotion(result_json)
-
-        # ── Save ─────────────────────────────────────────────────────────────
-        with open(SCORES_FILE, "w") as f:
-            json.dump(result_json, f, indent=4)
-
-        log_keys = ["empathy", "compliance", "resolution", "efficiency_score",
-                    "customer_emotion", "customer_satisfaction",
-                    "emotion_confidence", "satisfaction_confidence"]
-        print("SUCCESS →", {k: result_json.get(k) for k in log_keys if k in result_json})
-        return result_json
+        return await _run_scoring(conversation_text, file.filename, messages_list or None)
 
     except Exception as e:
         print("ERROR:", str(e))
-        error = {
-            "empathy": 0, "compliance": 0, "resolution": 0, "efficiency": 0,
-            "efficiency_score": 0, "avg_response_time": 0.0,
-            "empathy_timeline":    [{"stage": "Start", "score": 0}, {"stage": "Mid", "score": 0}, {"stage": "End", "score": 0}],
-            "compliance_steps":    [{"step": "ID Verify", "score": 0}, {"step": "Protocol", "score": 0}, {"step": "Closing", "score": 0}],
-            "resolution_progress": [{"stage": "Discovery", "score": 0}, {"stage": "Fixing", "score": 0}, {"stage": "Solved", "score": 0}],
-            "customer_emotion": "Neutral",      "customer_emotion_emoji":      "😐",
-            "customer_satisfaction": "Neutral", "customer_satisfaction_emoji": "😐",
-            "emotion_confidence": 0,            "satisfaction_confidence": 0,
-            "satisfaction_percentage": 0,
-            "bias": {"name_neutrality": 0, "language_neutrality": 0,
-                     "tone_consistency": 0, "equal_effort": 0, "overall_fairness": 0},
-            "reasoning": f"Analysis failed: {str(e)}",
-        }
+        err = _ERROR_RESULT(str(e))
         with open(SCORES_FILE, "w") as f:
-            json.dump(error, f, indent=4)
-        return error
+            json.dump(err, f, indent=4)
+        return err
+
+
+# ==============================================================================
+# SHARED SCORING CORE  (used by both /analyze-quality and /analyze-quality-direct)
+# ==============================================================================
+
+async def _run_scoring(conversation_text: str, filename: str,
+                       messages_list: list | None = None) -> dict:
+    """
+    Run the full scoring pipeline on already-resolved conversation text.
+    Returns the result dict and also persists it to disk + history.
+    """
+    if not conversation_text.strip():
+        raise ValueError("No conversation content to analyse.")
+
+    conversation_text = normalize_speakers(conversation_text)
+    print(f"  Normalised transcript ({len(conversation_text)} chars, "
+          f"{len([l for l in conversation_text.splitlines() if l.strip()])} lines)")
+
+    print("Running bias analysis…")
+    bias_scores = compute_bias_scores(conversation_text)
+    print(f"  bias → {bias_scores}")
+
+    if messages_list:
+        eff, avg_rt = efficiency_score_from_messages(messages_list)
+    else:
+        eff, avg_rt = estimate_efficiency_from_text(conversation_text)
+    print(f"  efficiency={eff}, avg_response_time={avg_rt}s")
+
+    anon = re.sub(r"\b\d{6,}\b", "[ACCOUNT]", conversation_text)
+    anon = re.sub(r"\b[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}\b", "[EMAIL]", anon)
+    anon = re.sub(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE]", anon)
+    llm_input = anon[:8000]
+
+    print("Running LLM evaluation…")
+    result_json = call_llama(build_prompt(llm_input))
+
+    result_json["efficiency_score"]  = eff
+    result_json["avg_response_time"] = avg_rt
+    result_json["bias"]              = bias_scores
+    result_json = enrich_emotion(result_json)
+
+    with open(SCORES_FILE, "w") as f:
+        json.dump(result_json, f, indent=4)
+
+    _append_to_history(result_json, filename)
+
+    log_keys = ["empathy", "compliance", "resolution", "efficiency_score",
+                "customer_emotion", "customer_satisfaction",
+                "emotion_confidence", "satisfaction_confidence"]
+    print("SUCCESS →", {k: result_json.get(k) for k in log_keys if k in result_json})
+    return result_json
+
+
+_ERROR_RESULT = lambda msg: {
+    "empathy": 0, "compliance": 0, "resolution": 0, "efficiency": 0,
+    "efficiency_score": 0, "avg_response_time": 0.0,
+    "empathy_timeline":    [{"stage": "Start", "score": 0}, {"stage": "Mid", "score": 0}, {"stage": "End", "score": 0}],
+    "compliance_steps":    [{"step": "ID Verify", "score": 0}, {"step": "Protocol", "score": 0}, {"step": "Closing", "score": 0}],
+    "resolution_progress": [{"stage": "Discovery", "score": 0}, {"stage": "Fixing", "score": 0}, {"stage": "Solved", "score": 0}],
+    "customer_emotion": "Neutral",      "customer_emotion_emoji":      "😐",
+    "customer_satisfaction": "Neutral", "customer_satisfaction_emoji": "😐",
+    "emotion_confidence": 0,            "satisfaction_confidence": 0,
+    "satisfaction_percentage": 0,
+    "bias": {"name_neutrality": 0, "language_neutrality": 0,
+             "tone_consistency": 0, "equal_effort": 0, "overall_fairness": 0},
+    "reasoning": f"Analysis failed: {msg}",
+}
+
+
+# ==============================================================================
+# NEW: Direct transcript scoring endpoint
+# Frontend passes transcript rows it already has — no port-8000 fetch, no races
+# ==============================================================================
+
+from pydantic import BaseModel
+
+class TranscriptRow(BaseModel):
+    speaker: str
+    text: str
+    start: float | None = None
+
+class DirectScoreRequest(BaseModel):
+    filename: str
+    transcript: list[TranscriptRow]
+
+
+@app.post("/analyze-quality-direct")
+async def analyze_quality_direct(req: DirectScoreRequest):
+    """
+    Score a call using a transcript the frontend already has.
+    Accepts { filename, transcript: [{speaker, text, start?}, ...] }.
+    Eliminates the port-8000 fetch race condition entirely.
+    """
+    print(f"\n--- DIRECT SCORING: {req.filename} ({len(req.transcript)} turns) ---")
+    try:
+        rows = [
+            f"{r.speaker}: {r.text}"
+            for r in req.transcript
+            if r.text.strip()
+        ]
+        if not rows:
+            raise ValueError("Transcript is empty.")
+        conversation_text = "\n".join(rows)
+        return await _run_scoring(conversation_text, req.filename)
+    except Exception as e:
+        print("ERROR:", str(e))
+        err = _ERROR_RESULT(str(e))
+        with open(SCORES_FILE, "w") as f:
+            json.dump(err, f, indent=4)
+        return err
 
 
 @app.get("/get-quality-scores")
@@ -632,7 +807,98 @@ async def get_scores():
     }
 
 
-@app.post("/evaluate-chat-file")
+@app.get("/get-aggregate-scores")
+async def get_aggregate_scores():
+    """
+    Returns scores averaged across ALL calls in history.
+    The response includes a `file_count` field so the UI can show
+    'Based on N calls'.  Falls back to the latest single-file scores
+    if no history exists yet.
+    """
+    if os.path.exists(SCORES_HISTORY_FILE):
+        try:
+            with open(SCORES_HISTORY_FILE, "r") as f:
+                history = json.load(f)
+            if history:
+                agg = _compute_aggregate(history)
+                print(f"Aggregate served: {agg.get('file_count')} files")
+                return agg
+        except Exception as e:
+            print(f"Aggregate error: {e}")
+
+    # Fallback — no history yet, serve latest single-file result
+    if os.path.exists(SCORES_FILE):
+        with open(SCORES_FILE, "r") as f:
+            data = json.load(f)
+        data.setdefault("file_count", 1)
+        return data
+
+    return {
+        "empathy": 0, "compliance": 0, "resolution": 0, "efficiency": 0,
+        "efficiency_score": 0, "avg_response_time": 0.0, "file_count": 0,
+        "empathy_timeline":    [{"stage": "Start", "score": 0}, {"stage": "Mid", "score": 0}, {"stage": "End", "score": 0}],
+        "compliance_steps":    [{"step": "ID Verify", "score": 0}, {"step": "Protocol", "score": 0}, {"step": "Closing", "score": 0}],
+        "resolution_progress": [{"stage": "Discovery", "score": 0}, {"stage": "Fixing", "score": 0}, {"stage": "Solved", "score": 0}],
+        "customer_emotion": "Neutral",      "customer_emotion_emoji":      "😐",
+        "customer_satisfaction": "Neutral", "customer_satisfaction_emoji": "😐",
+        "emotion_confidence": 0,            "satisfaction_confidence": 0,
+        "satisfaction_percentage": 0,
+        "bias": {"name_neutrality": 0, "language_neutrality": 0,
+                 "tone_consistency": 0, "equal_effort": 0, "overall_fairness": 0},
+        "reasoning": "No analysis data found. Please upload a file.",
+    }
+
+
+@app.post("/start-session")
+async def start_session():
+    """
+    Call this BEFORE sending files for a new upload session (single or batch).
+    Clears history so the aggregate only reflects the current session's calls,
+    not every call ever uploaded since the server started.
+    """
+    removed = []
+    for fpath in [SCORES_HISTORY_FILE, SCORES_FILE]:
+        if os.path.exists(fpath):
+            os.remove(fpath)
+            removed.append(fpath)
+    print(f"[SESSION] History cleared — fresh session started. Removed: {removed}")
+    return {"status": "session_started", "removed": removed}
+
+
+@app.delete("/clear-scores-history")
+async def clear_scores_history():
+    """Wipe history so aggregate resets to zero."""
+    removed = []
+    for fpath in [SCORES_HISTORY_FILE, SCORES_FILE]:
+        if os.path.exists(fpath):
+            os.remove(fpath)
+            removed.append(fpath)
+    return {"status": "cleared", "removed": removed}
+
+
+@app.get("/scores-history")
+async def list_scores_history():
+    """Return raw per-file history (file_name, timestamp, core scores) for debugging."""
+    if not os.path.exists(SCORES_HISTORY_FILE):
+        return []
+    try:
+        with open(SCORES_HISTORY_FILE, "r") as f:
+            history = json.load(f)
+        return [
+            {
+                "file_name":  e.get("file_name", "unknown"),
+                "timestamp":  e.get("timestamp", ""),
+                "empathy":    e.get("empathy", 0),
+                "compliance": e.get("compliance", 0),
+                "resolution": e.get("resolution", 0),
+                "efficiency_score": e.get("efficiency_score", 0),
+                "customer_emotion":      e.get("customer_emotion", "—"),
+                "customer_satisfaction": e.get("customer_satisfaction", "—"),
+            }
+            for e in history
+        ]
+    except Exception as e:
+        return {"error": str(e)}
 async def evaluate_chat_file(file: UploadFile = File(...)):
     """Efficiency + bias only — no LLM call."""
     try:

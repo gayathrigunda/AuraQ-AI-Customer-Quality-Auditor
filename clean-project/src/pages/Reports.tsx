@@ -47,6 +47,9 @@ export type QualityScores = {
   };
 
   reasoning?: string;
+
+  // Aggregate metadata
+  file_count?: number;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -69,6 +72,7 @@ const DEFAULT_SCORES: QualityScores = {
   satisfaction_confidence:   0,
   bias: { name_neutrality: 0, language_neutrality: 0, tone_consistency: 0, equal_effort: 0, overall_fairness: 0 },
   reasoning: "No analysis yet — upload a file on the Home page.",
+  file_count: 0,
 };
 
 // Emotion → bar colour class
@@ -125,7 +129,7 @@ const Reports = () => {
 
     // Always fetch fresh from 8002 — this is the source of truth
     try {
-      const res = await fetch(`${QUALITY_API}/get-quality-scores`, { cache: "no-store" });
+      const res = await fetch(`${QUALITY_API}/get-aggregate-scores`, { cache: "no-store" });
       if (res.ok) {
         const data: QualityScores = await res.json();
         if (data.empathy > 0 || data.compliance > 0 || data.resolution > 0) {
@@ -177,6 +181,7 @@ const Reports = () => {
     ? scores.efficiency
     : (scores.efficiency_score ?? 0);
   const hasData      = scores.empathy > 0 || scores.compliance > 0 || scores.resolution > 0;
+  const fileCount    = scores.file_count ?? 0;
 
   const emotion           = (scores.customer_emotion        ?? "—");
   const emotionEmoji      = (scores.customer_emotion_emoji  ?? "😐");
@@ -203,11 +208,31 @@ const Reports = () => {
               AI-powered call quality scoring — auto-updates after every upload
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {fileCount > 0 && (
+              <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest bg-primary/10 text-primary px-3 py-1.5 rounded-full border border-primary/20">
+                <span className="text-base font-black">{fileCount}</span>
+                call{fileCount !== 1 ? "s" : ""} averaged
+              </span>
+            )}
             {lastFetch && (
               <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                 <Clock className="h-3 w-3" /> Last updated: {lastFetch}
               </span>
+            )}
+            {fileCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10 text-xs"
+                onClick={async () => {
+                  await fetch(`${QUALITY_API}/clear-scores-history`, { method: "DELETE" });
+                  localStorage.removeItem(QUALITY_SCORES_KEY);
+                  loadScores(true);
+                }}
+              >
+                Reset History
+              </Button>
             )}
             <Button
               onClick={() => loadScores(true)}
@@ -225,8 +250,9 @@ const Reports = () => {
         {/* No-data banner */}
         {!hasData && (
           <div className="glass-card rounded-2xl p-6 border border-dashed border-border/40 text-center text-sm text-muted-foreground">
-            No quality scores yet — upload a file on the{" "}
-            <span className="font-semibold text-foreground">Home page</span> to generate scores.
+            No quality scores yet — upload files on the{" "}
+            <span className="font-semibold text-foreground">Home page</span>.
+            Scores are averaged across all uploaded calls automatically.
           </div>
         )}
 
