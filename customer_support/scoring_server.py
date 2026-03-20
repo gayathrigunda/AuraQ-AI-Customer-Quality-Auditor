@@ -8,10 +8,6 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
-from dotenv import load_dotenv
-from pathlib import Path
-
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")  # goes up to root
 
 
 # --- CONFIGURATION ---
@@ -477,15 +473,15 @@ async def analyze_quality(file: UploadFile = File(...)):
 
         else:   # audio — fetch fresh transcript from port-8000 after it finishes
             print("Waiting for audio transcript sync…")
-            time.sleep(15)  # increased: Cloudinary upload adds ~10-15s to transcription
+            time.sleep(6)
 
             # ── PRIMARY: fetch from port-8000 /get-transcript with retry ────
             # getaddrinfo / connection errors are transient on loopback —
             # retry up to 3 times with a short back-off before giving up.
             transcript_fetched = False
             AUDIO_API_URL      = "http://127.0.0.1:8000/get-transcript"
-            MAX_RETRIES        = 8    # increased: wait longer for Cloudinary flow
-            RETRY_DELAY        = 5    # seconds between retries
+            MAX_RETRIES        = 3
+            RETRY_DELAY        = 2   # seconds between retries
 
             for attempt in range(1, MAX_RETRIES + 1):
                 try:
