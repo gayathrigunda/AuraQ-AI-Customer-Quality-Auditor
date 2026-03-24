@@ -2,7 +2,6 @@ import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from app import app as audio_app
 from chat_app import app as chat_app
 from scoring_server import app as scoring_app
@@ -17,22 +16,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include all routes except / and /health to avoid conflicts
+skip_paths = {"/", "/health", "/openapi.json", "/docs", "/redoc"}
+
+for route in audio_app.routes:
+    if hasattr(route, "path") and route.path not in skip_paths:
+        app.router.routes.append(route)
+
+for route in chat_app.routes:
+    if hasattr(route, "path") and route.path not in skip_paths:
+        app.router.routes.append(route)
+
+for route in scoring_app.routes:
+    if hasattr(route, "path") and route.path not in skip_paths:
+        app.router.routes.append(route)
+
 @app.get("/")
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "AuraQ Combined Server"}
-
-# Include all routes from each server directly
-for route in audio_app.routes:
-    app.router.routes.append(route)
-
-for route in chat_app.routes:
-    app.router.routes.append(route)
-
-for route in scoring_app.routes:
-    app.router.routes.append(route)
-
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
