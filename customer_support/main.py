@@ -24,6 +24,11 @@ main_app.add_middleware(
 async def health():
     return {"status": "ok", "service": "AuraQ Combined Server"}
 
+
+@main_app.api_route("/", methods=["GET", "HEAD"])
+async def root():
+    return {"message": "Welcome"}
+
 # Mount all routes from each module's app
 for route in audio_module.app.routes:
     if hasattr(route, "path") and route.path not in ["/", "/health", "/docs", "/redoc", "/openapi.json"]:

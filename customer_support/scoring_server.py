@@ -31,11 +31,9 @@ try:
     from sentence_transformers import SentenceTransformer
     from pinecone import Pinecone, ServerlessSpec
     _RAG_LIBS_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     _RAG_LIBS_AVAILABLE = False
-    print("[RAG] WARNING: RAG libraries not installed. "
-          "Run: pip install -r requirements.txt  "
-          "Policy upload will be disabled until then.")
+    print(f"[RAG] WARNING: {e}") 
 
 # --- CONFIGURATION ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
