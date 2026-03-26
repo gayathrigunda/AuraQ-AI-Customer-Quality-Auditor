@@ -1,12 +1,12 @@
 {
     "empathy": 8,
     "compliance": 9,
-    "resolution": 9,
+    "resolution": 7,
     "efficiency": 8,
     "empathy_timeline": [
         {
             "stage": "Start",
-            "score": 1
+            "score": 8
         },
         {
             "stage": "Mid",
@@ -14,13 +14,13 @@
         },
         {
             "stage": "End",
-            "score": 9
+            "score": 8
         }
     ],
     "compliance_steps": [
         {
             "step": "ID Verify",
-            "score": 1
+            "score": 9
         },
         {
             "step": "Protocol",
@@ -38,30 +38,30 @@
         },
         {
             "stage": "Fixing",
-            "score": 9
+            "score": 8
         },
         {
             "stage": "Solved",
-            "score": 9
+            "score": 7
         }
     ],
     "customer_emotion": "Happy",
-    "emotion_confidence": 90,
+    "emotion_confidence": 80,
     "customer_satisfaction": "Highly Satisfied",
     "satisfaction_percentage": 95,
     "satisfaction_confidence": 90,
-    "reasoning": "The customer's positive tone and language throughout the conversation, such as 'This is a game-changer' and 'Welcome aboard, Mike!', indicate a high level of satisfaction. The customer also explicitly thanked the agent and praised the solution.",
+    "reasoning": "The customer was happy throughout the conversation, thanking the agent and expressing satisfaction with the order. The agent successfully completed the customer's request, resolving the issue.",
     "policy_violations": "None",
     "policy_context_used": false,
     "policy_chunks_count": 0,
-    "efficiency_score": 6,
+    "efficiency_score": 5,
     "avg_response_time": 0.0,
     "bias": {
-        "name_neutrality": 5,
-        "language_neutrality": 8,
-        "tone_consistency": 7,
-        "equal_effort": 2,
-        "overall_fairness": 6
+        "name_neutrality": 7,
+        "language_neutrality": 10,
+        "tone_consistency": 8,
+        "equal_effort": 9,
+        "overall_fairness": 8
     },
     "customer_emotion_emoji": "\ud83d\ude0a",
     "customer_satisfaction_emoji": "\ud83d\ude0a"

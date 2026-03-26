@@ -46,10 +46,6 @@ export function Sidebar() {
 
       {/* Bottom */}
       <div className="px-3 pb-6 space-y-1">
-        <button className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 w-full transition-all">
-          <Download className="h-[18px] w-[18px]" />
-          Downloads
-        </button>
         <div className="mx-4 my-3 border-t border-border/20" />
         <div className="flex items-center justify-center">
           <div className="h-9 w-9 rounded-full bg-primary/15 flex items-center justify-center border border-primary/20">
