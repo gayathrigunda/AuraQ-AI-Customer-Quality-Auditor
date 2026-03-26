@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/AppLayout";
 import {
   Heart, Shield, CheckCircle, RefreshCw, CircleDot,
   TrendingUp, MessageSquare, ThumbsUp, Globe, Loader2, Clock,
+  BellRing, AlertTriangle, AlertCircle, Info, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,6 +111,33 @@ const Reports = () => {
   const [loading,   setLoading]   = useState(false);
   const [lastFetch, setLastFetch] = useState<string>("");
 
+  // ── Alerts state ──────────────────────────────────────────────────────────
+  type ComplianceAlert = {
+    id: string;
+    severity: "critical" | "warning" | "info";
+    category: string;
+    title: string;
+    message: string;
+    action: string;
+    score: number;
+    threshold: number;
+    file_name: string;
+  };
+  const [alerts,          setAlerts]          = useState<ComplianceAlert[]>([]);
+  const [hasCritical,     setHasCritical]     = useState(false);
+  const [alertsDismissed, setAlertsDismissed] = useState(false);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const res = await fetch(`${QUALITY_API}/alerts`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setAlerts(data.alerts ?? []);
+      setHasCritical(data.has_critical ?? false);
+      if (data.total > 0) setAlertsDismissed(false);
+    } catch {}
+  }, []);
+
   // ── Score loading ────────────────────────────────────────────────────────
   // Always hits 8002 directly — never serves stale localStorage on first load.
   // localStorage is only used as an instant paint while the fetch is in-flight.
@@ -149,9 +177,9 @@ const Reports = () => {
   // + auto-poll every 30s so same-tab SPA stays fresh without manual Refresh
   useEffect(() => {
     loadScores();
+    loadAlerts();
 
-    // Auto-poll: catches uploads done on the same SPA tab where storageEvent won't fire
-    const poll = setInterval(() => loadScores(), 30_000);
+    const poll = setInterval(() => { loadScores(); loadAlerts(); }, 30_000);
 
     const onStorage = (e: StorageEvent) => {
       if (e.key === QUALITY_SCORES_KEY && e.newValue) {
@@ -167,7 +195,7 @@ const Reports = () => {
       clearInterval(poll);
       window.removeEventListener("storage", onStorage);
     };
-  }, [loadScores]);
+  }, [loadScores, loadAlerts]);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -176,10 +204,8 @@ const Reports = () => {
   const resolutionVelocityData = (scores.resolution_progress ?? DEFAULT_SCORES.resolution_progress!).map(r => ({ step: r.stage, score: r.score }));
 
   const bias         = scores.bias ?? DEFAULT_SCORES.bias!;
-  // Prefer LLM-scored "efficiency" (1-10) over text-estimated "efficiency_score"
-  const effScore = (scores.efficiency && scores.efficiency > 0)
-    ? scores.efficiency
-    : (scores.efficiency_score ?? 0);
+  // Always use server-computed efficiency_score (matches terminal output)
+  const effScore = scores.efficiency_score ?? 0;
   const hasData      = scores.empathy > 0 || scores.compliance > 0 || scores.resolution > 0;
   const fileCount    = scores.file_count ?? 0;
 
@@ -256,12 +282,124 @@ const Reports = () => {
           </div>
         )}
 
-        {/* ── Top 3 Score Cards ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* ── Compliance Alerts Panel ───────────────────────────────────── */}
+        {alerts.length > 0 && !alertsDismissed && (
+          <div className={`rounded-2xl border overflow-hidden ${
+            hasCritical ? "border-destructive/40 bg-destructive/5" : "border-warning/40 bg-warning/5"
+          }`}>
+            {/* Header */}
+            <div className={`px-6 py-4 flex items-center justify-between border-b ${
+              hasCritical ? "border-destructive/20 bg-destructive/10" : "border-warning/20 bg-warning/10"
+            }`}>
+              <div className="flex items-center gap-3">
+                <BellRing className={`h-5 w-5 ${hasCritical ? "text-destructive" : "text-warning"}`} />
+                <div>
+                  <p className={`text-sm font-bold ${hasCritical ? "text-destructive" : "text-warning"}`}>
+                    {hasCritical ? "Critical Compliance Issues" : "Compliance Alerts"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {alerts.filter(a => a.severity === "critical").length} critical ·{" "}
+                    {alerts.filter(a => a.severity === "warning").length} warning ·{" "}
+                    {alerts.filter(a => a.severity === "info").length} info
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAlertsDismissed(true)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Alert rows */}
+            <div className="divide-y divide-border/20 max-h-[360px] overflow-y-auto">
+              {alerts.map((alert) => {
+                const isCrit = alert.severity === "critical";
+                const isWarn = alert.severity === "warning";
+                const icon = isCrit
+                  ? <AlertCircle   className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                  : isWarn
+                  ? <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
+                  : <Info          className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />;
+                const severityColor = isCrit
+                  ? "text-destructive bg-destructive/10"
+                  : isWarn
+                  ? "text-warning bg-warning/10"
+                  : "text-primary bg-primary/10";
+                const scoreColor = isCrit ? "text-destructive" : isWarn ? "text-warning" : "text-primary";
+                return (
+                  <div key={alert.id} className="px-6 py-4 flex items-start gap-4">
+                    {icon}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-sm font-semibold">{alert.title}</span>
+                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${severityColor}`}>
+                          {alert.severity}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
+                          {alert.category}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{alert.message}</p>
+                      {alert.action && (
+                        <div className={`mt-2 px-3 py-2 rounded-lg text-xs border-l-2 ${
+                          isCrit
+                            ? "bg-destructive/5 border-destructive/40 text-destructive/90"
+                            : isWarn
+                            ? "bg-warning/5 border-warning/40 text-warning/90"
+                            : "bg-primary/5 border-primary/40 text-primary/90"
+                        }`}>
+                          <span className="font-semibold">Suggestion: </span>{alert.action}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-4 mt-2">
+                        <span className="text-[11px] text-muted-foreground">
+                          Score: <span className={`font-bold ${scoreColor}`}>{alert.score}/10</span>
+                          <span className="text-muted-foreground/50"> · threshold {alert.threshold}</span>
+                        </span>
+                        {alert.file_name && alert.file_name !== "latest" && (
+                          <span className="text-[10px] italic text-muted-foreground truncate max-w-[220px]">
+                            📁 {alert.file_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Score pill */}
+                    <div className={`flex-shrink-0 text-center px-3 py-1.5 rounded-xl border ${
+                      isCrit ? "border-destructive/30 bg-destructive/10" : isWarn ? "border-warning/30 bg-warning/10" : "border-primary/30 bg-primary/10"
+                    }`}>
+                      <span className={`text-xl font-heading font-black ${scoreColor}`}>{alert.score}</span>
+                      <span className="text-[10px] text-muted-foreground block">/10</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 bg-muted/20 border-t border-border/20 flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">
+                Alerts auto-refresh every 30s · Scores below threshold trigger alerts
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={loadAlerts}
+                className="text-xs h-7 rounded-lg"
+              >
+                <RefreshCw className="h-3 w-3 mr-1.5" /> Refresh
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Top 4 Score Cards ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {([
-            { key: "empathy",    label: "EMPATHY",    gradientClass: "score-fill-gradient-cyan",   icon: <Heart       className="h-5 w-5 text-primary/30"  /> },
-            { key: "compliance", label: "COMPLIANCE", gradientClass: "score-fill-gradient-purple", icon: <Shield      className="h-5 w-5 text-chart-4/30"  /> },
-            { key: "resolution", label: "RESOLUTION", gradientClass: "score-fill-gradient-green",  icon: <CheckCircle className="h-5 w-5 text-success/30" /> },
+            { key: "empathy",    label: "EMPATHY",    gradientClass: "score-fill-gradient-cyan",   icon: <Heart       className="h-5 w-5 text-primary/30"  />, colorClass: "text-gradient-cyan"   },
+            { key: "compliance", label: "COMPLIANCE", gradientClass: "score-fill-gradient-purple", icon: <Shield      className="h-5 w-5 text-chart-4/30"  />, colorClass: "text-gradient-cyan"   },
+            { key: "resolution", label: "RESOLUTION", gradientClass: "score-fill-gradient-green",  icon: <CheckCircle className="h-5 w-5 text-success/30" />, colorClass: "text-gradient-cyan"   },
           ] as const).map((s) => {
             const val = (scores[s.key] as number) ?? 0;
             return (
@@ -280,35 +418,20 @@ const Reports = () => {
               </div>
             );
           })}
-        </div>
 
-        {/* ── Efficiency + Response Time ────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Efficiency Score — 4th card in the same row */}
           <div className="glass-card card-hover rounded-2xl p-6">
-            <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">Efficiency Score</span>
-            <div className="flex items-baseline gap-1 mt-4">
-              <span className="text-5xl font-heading font-black text-warning">{effScore}</span>
-              <span className="text-lg text-muted-foreground font-medium">/10</span>
+            <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">EFFICIENCY SCORE</span>
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex items-baseline gap-1">
+                <span className="text-5xl font-heading font-black text-warning">{effScore}</span>
+                <span className="text-lg text-muted-foreground font-medium">/10</span>
+              </div>
+              <TrendingUp className="h-5 w-5 text-warning/30" />
             </div>
             <div className="score-bar mt-5">
               <div className="score-fill score-fill-gradient-amber" style={{ width: `${effScore * 10}%` }} />
             </div>
-            <p className="text-xs text-muted-foreground mt-4">Based on conversation length and response speed</p>
-          </div>
-
-          <div className="glass-card card-hover rounded-2xl p-6">
-            <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">Avg Response Time</span>
-            <div className="flex items-center gap-3 mt-4">
-              <span className="text-5xl font-heading font-black text-primary">
-                {scores.avg_response_time > 0 ? `${scores.avg_response_time.toFixed(1)}s` : "—"}
-              </span>
-              <MessageSquare className="h-6 w-6 text-primary/20" />
-            </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              {scores.avg_response_time > 0
-                ? `Agent replied in avg ${scores.avg_response_time.toFixed(1)}s per customer message`
-                : "No timestamp data available for this call"}
-            </p>
           </div>
         </div>
 
