@@ -1,34 +1,34 @@
 {
-    "empathy": 8,
-    "compliance": 9,
+    "empathy": 5,
+    "compliance": 8,
     "resolution": 7,
     "efficiency": 8,
     "empathy_timeline": [
         {
             "stage": "Start",
-            "score": 8
+            "score": 5
         },
         {
             "stage": "Mid",
-            "score": 8
+            "score": 5
         },
         {
             "stage": "End",
-            "score": 8
+            "score": 5
         }
     ],
     "compliance_steps": [
         {
             "step": "ID Verify",
-            "score": 9
+            "score": 10
         },
         {
             "step": "Protocol",
-            "score": 9
+            "score": 8
         },
         {
             "step": "Closing",
-            "score": 9
+            "score": 8
         }
     ],
     "resolution_progress": [
@@ -42,18 +42,18 @@
         },
         {
             "stage": "Solved",
-            "score": 7
+            "score": 6
         }
     ],
     "customer_emotion": "Happy",
     "emotion_confidence": 80,
-    "customer_satisfaction": "Highly Satisfied",
-    "satisfaction_percentage": 95,
-    "satisfaction_confidence": 90,
-    "reasoning": "The customer was happy throughout the conversation, thanking the agent and expressing satisfaction with the order. The agent successfully completed the customer's request, resolving the issue.",
+    "customer_satisfaction": "Satisfied",
+    "satisfaction_percentage": 80,
+    "satisfaction_confidence": 80,
+    "reasoning": "The customer was happy with the service and thanked the agent at the end. The issue was partially resolved, but the customer did not explicitly confirm satisfaction.",
     "policy_violations": "None",
-    "policy_context_used": false,
-    "policy_chunks_count": 0,
+    "policy_context_used": true,
+    "policy_chunks_count": 3,
     "efficiency_score": 5,
     "avg_response_time": 0.0,
     "bias": {
@@ -64,5 +64,5 @@
         "overall_fairness": 8
     },
     "customer_emotion_emoji": "\ud83d\ude0a",
-    "customer_satisfaction_emoji": "\ud83d\ude0a"
+    "customer_satisfaction_emoji": "\ud83d\ude0c"
 }
