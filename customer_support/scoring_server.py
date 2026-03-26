@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 
 # ── RAG: LangChain + Pinecone + local embeddings ─────────────────────────────
