@@ -2,29 +2,251 @@ import os
 import re
 import json
 import time
+import uuid
+import shutil
+import asyncio
 import httpx
 import pandas as pd
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File
+from pathlib import Path
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
-from pathlib import Path
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env") 
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+
+# ── RAG: LangChain + Pinecone + local embeddings ─────────────────────────────
+try:
+    # langchain_text_splitters is the correct package in LangChain >= 0.2
+    # Fallback to the old path for older installs
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+    except ImportError:
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_community.document_loaders import PyPDFLoader, TextLoader
+    from sentence_transformers import SentenceTransformer
+    from pinecone import Pinecone, ServerlessSpec
+    _RAG_LIBS_AVAILABLE = True
+except ImportError:
+    _RAG_LIBS_AVAILABLE = False
+    print("[RAG] WARNING: RAG libraries not installed. "
+          "Run: pip install -r requirements_rag.txt  "
+          "Policy upload will be disabled until then.")
 
 # --- CONFIGURATION ---
-# Load sensitive keys from the environment (so they are not committed into source control)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("Missing required env var: GROQ_API_KEY")
+
 TRANSCRIPT_FILE     = "transcriptions_with_speakers.csv"
 SCORES_FILE         = "quality_scores.json"
-SCORES_HISTORY_FILE = "quality_scores_history.json"   # appended per file, drives aggregation
+SCORES_HISTORY_FILE = "quality_scores_history.json"
 
-app = FastAPI()
+# ── Pinecone config (optional — RAG is disabled if key is absent) ─────────────
+PINECONE_API_KEY    = os.environ.get("PINECONE_API_KEY", "")
+PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "auraq-policy")
+EMBEDDING_MODEL     = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_DIM       = 384          # must match your Pinecone index dimension
+CHUNK_SIZE          = 512
+CHUNK_OVERLAP       = 64
+TOP_K               = 5
+UPSERT_BATCH        = 100
+
+UPLOAD_TEMP_DIR     = "rag_uploads"
+POLICY_META_FILE    = "policy_meta.json"
+os.makedirs(UPLOAD_TEMP_DIR, exist_ok=True)
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app_instance):
+    """
+    Pre-warm the embedding model and Pinecone connection at startup.
+    This means the first /upload-policy request won't have to wait 20+ seconds
+    for the model to download — it will already be cached and ready.
+    """
+    if _rag_available():
+        print("[RAG] Pre-warming embedding model and Pinecone at startup…")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _get_embed_model)   # download/cache model
+        await loop.run_in_executor(None, _get_pinecone_index)  # connect to Pinecone
+        print("[RAG] Pre-warm complete — policy upload is ready.")
+    yield  # server runs here
+    # (nothing to clean up on shutdown)
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 client = Groq(api_key=GROQ_API_KEY)
+
+GROQ_CONCURRENCY = int(os.environ.get("GROQ_CONCURRENCY", "3"))
+_GROQ_SEMAPHORE  = None
+
+def get_groq_semaphore() -> asyncio.Semaphore:
+    global _GROQ_SEMAPHORE
+    if _GROQ_SEMAPHORE is None:
+        _GROQ_SEMAPHORE = asyncio.Semaphore(GROQ_CONCURRENCY)
+    return _GROQ_SEMAPHORE
+
+
+# ==============================================================================
+# RAG — PINECONE + LOCAL EMBEDDINGS (integrated, no separate server needed)
+# ==============================================================================
+
+_pinecone_index  = None   # Pinecone Index object, initialised lazily
+_embed_model     = None   # SentenceTransformer, loaded once on first use
+
+
+def _rag_available() -> bool:
+    """True only if RAG libs are installed AND a Pinecone API key is configured."""
+    return _RAG_LIBS_AVAILABLE and bool(PINECONE_API_KEY)
+
+
+def _get_embed_model():
+    """Load the embedding model once and cache it."""
+    global _embed_model
+    if _embed_model is None:
+        print(f"[RAG] Loading embedding model '{EMBEDDING_MODEL}'…")
+        _embed_model = SentenceTransformer(EMBEDDING_MODEL)
+        print("[RAG] Embedding model ready.")
+    return _embed_model
+
+
+def _get_pinecone_index():
+    """Connect to Pinecone and return the index object (lazy init)."""
+    global _pinecone_index
+    if _pinecone_index is not None:
+        return _pinecone_index
+    if not _rag_available():
+        return None
+    try:
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        existing = [idx.name for idx in pc.list_indexes()]
+        if PINECONE_INDEX_NAME not in existing:
+            print(f"[RAG] Creating Pinecone index '{PINECONE_INDEX_NAME}'…")
+            pc.create_index(
+                name      = PINECONE_INDEX_NAME,
+                dimension = EMBEDDING_DIM,
+                metric    = "cosine",
+                spec      = ServerlessSpec(cloud="aws", region="us-east-1"),
+            )
+            print(f"[RAG] Index '{PINECONE_INDEX_NAME}' created.")
+        else:
+            print(f"[RAG] Connected to Pinecone index '{PINECONE_INDEX_NAME}'")
+        _pinecone_index = pc.Index(PINECONE_INDEX_NAME)
+        return _pinecone_index
+    except Exception as e:
+        print(f"[RAG] Pinecone init error: {e}")
+        return None
+
+
+def _embed(texts: list) -> list:
+    return _get_embed_model().encode(texts, normalize_embeddings=True).tolist()
+
+
+def _make_namespace(filename: str) -> str:
+    base = Path(filename).stem
+    return "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in base).lower()
+
+
+def _load_policy_meta() -> dict:
+    if os.path.exists(POLICY_META_FILE):
+        try:
+            with open(POLICY_META_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_policy_meta(meta: dict):
+    with open(POLICY_META_FILE, "w") as f:
+        json.dump(meta, f, indent=2)
+
+
+def _policy_loaded() -> bool:
+    """Returns True if a policy has been uploaded and vectors exist in Pinecone."""
+    if not _rag_available():
+        return False
+    meta = _load_policy_meta()
+    return bool(meta.get("namespace"))
+
+
+async def _fetch_policy_context(conversation_text: str) -> list:
+    """
+    If a policy is loaded in Pinecone, retrieve the top-K most relevant
+    policy chunks via cosine similarity.
+
+    Strategy: run THREE focused queries covering different compliance angles,
+    then deduplicate. This dramatically improves recall compared to a single
+    agent-lines-only query.
+    """
+    if not _policy_loaded():
+        return []
+
+    try:
+        index = _get_pinecone_index()
+        if index is None:
+            return []
+
+        meta      = _load_policy_meta()
+        namespace = meta.get("namespace", "")
+
+        lines       = [l for l in conversation_text.splitlines() if l.strip()]
+        agent_lines = [l for l in lines if l.lower().startswith("agent")]
+        cust_lines  = [l for l in lines if l.lower().startswith("customer")]
+
+        # Three complementary queries:
+        # 1. Agent procedure lines — what did the agent DO
+        # 2. Full conversation summary — overall context
+        # 3. Customer request — what was the PURPOSE of the call
+        queries = [
+            " ".join(agent_lines[:6]) if agent_lines else conversation_text[:400],
+            conversation_text[:600],
+            " ".join(cust_lines[:4]) if cust_lines else conversation_text[400:800],
+        ]
+        queries = [q.strip() for q in queries if q.strip()]
+
+        loop = asyncio.get_event_loop()
+
+        # Embed all queries in one batch
+        query_vectors = await loop.run_in_executor(None, lambda: _embed(queries))
+
+        # Query Pinecone for each, collect unique chunks by text
+        seen_texts: set = set()
+        all_chunks: list = []
+
+        for qv in query_vectors:
+            result = await loop.run_in_executor(
+                None,
+                lambda v=qv: index.query(
+                    vector=v,
+                    top_k=4,
+                    namespace=namespace,
+                    include_metadata=True,
+                )
+            )
+            for match in result["matches"]:
+                text = match.get("metadata", {}).get("text", "").strip()
+                # Only include if score > 0.3 (relevance threshold) and not duplicate
+                if text and match["score"] >= 0.3 and text not in seen_texts:
+                    seen_texts.add(text)
+                    all_chunks.append((match["score"], text))
+
+        # Sort by score descending, take top 5
+        all_chunks.sort(key=lambda x: x[0], reverse=True)
+        top_chunks = [text for _, text in all_chunks[:5]]
+
+        top_score = all_chunks[0][0] if all_chunks else 0
+        print(f"  [RAG] {len(top_chunks)} policy chunks retrieved "
+              f"(top score={round(top_score, 3)}, ns='{namespace}')")
+        return top_chunks
+
+    except Exception as e:
+        print(f"  [RAG] Retrieval failed: {e} — falling back to generic rubrics")
+        return []
 
 
 # ==============================================================================
@@ -254,7 +476,25 @@ def compute_bias_scores(conversation_text: str) -> dict:
 # LLM PROMPT
 # ==============================================================================
 
-def build_prompt(conversation_text: str) -> str:
+def build_prompt(conversation_text: str, policy_chunks: list[str] | None = None) -> str:
+    # Build the policy context section if chunks are available
+    policy_section = ""
+    if policy_chunks:
+        formatted = "\n\n".join(f"[Policy Excerpt {i+1}]\n{chunk}" for i, chunk in enumerate(policy_chunks))
+        policy_section = f"""
+=== COMPANY POLICY CONTEXT ===
+The following excerpts are from the company's official policy document.
+Use them to evaluate COMPLIANCE. If the agent followed these rules, score higher.
+If the agent violated or skipped them, penalise the compliance score accordingly.
+
+{formatted}
+
+IMPORTANT: When policy context is provided, compliance scoring MUST reference it.
+A score of 8-10 requires the agent to have followed the specific policy steps above.
+A score of 1-4 means the agent clearly violated or ignored these policy rules.
+
+"""
+
     return f"""
 You are a strict Quality Assurance evaluator for customer-service interactions.
 Read ONLY the CUSTOMER's lines carefully to detect emotion and satisfaction.
@@ -266,7 +506,9 @@ CRITICAL RULES:
 3. Casual small talk = resolution 1, compliance 1, all sub-scores 1.
 4. Resolution 9-10 ONLY if agent confirmed fix AND customer explicitly agreed.
 5. Compliance 9-10 ONLY if identity verified AND full protocol followed.
-
+6. SERVICE calls (orders, bookings, inquiries) are NOT casual chat — if the agent
+   successfully completed the customer's request, resolution must be at least 7.
+{policy_section}
 === RUBRICS ===
 
 EMPATHY (1-10):
@@ -282,6 +524,10 @@ COMPLIANCE (1-10):
 6-7: Mostly correct, minor gaps.
 8-9: Full verification + structured handling.
 10: Perfect best-practice execution.
+{
+    "→ COMPLIANCE NOTE: Score strictly against the COMPANY POLICY CONTEXT above, not just generic best practice."
+    if policy_chunks else ""
+}
 
 RESOLUTION (1-10):
 1-2: Issue not addressed.
@@ -289,7 +535,8 @@ RESOLUTION (1-10):
 5-6: Partially resolved.
 7-8: Resolved clearly.
 9-10: Resolved + confirmed by customer + follow-up offered.
-→ Casual chat with no issue = 1.
+→ Pure casual chat with no request and no issue = 1. 
+→ Completed service requests (order placed, info given, booking made) = 7 minimum.
 
 EFFICIENCY (1-10):
 1-3: Long, repetitive, circular.
@@ -376,12 +623,46 @@ resolution_progress — score each independently (1 for casual chat):
   "customer_satisfaction":     "<Not Satisfied|Somewhat Satisfied|Neutral|Satisfied|Highly Satisfied>",
   "satisfaction_percentage":   <integer 0-100>,
   "satisfaction_confidence":   <integer 0-100>,
-  "reasoning": "<2-3 sentences quoting specific customer lines to justify emotion and satisfaction scores>"
+  "reasoning": "<2-3 sentences quoting specific customer lines to justify emotion and satisfaction scores>",
+  "policy_violations": "<brief list of policy rules that were broken, or 'None' if all rules followed>"
 }}
 """
 
 
+async def call_llama_async(prompt_text: str, max_retries: int = 5) -> dict:
+    """
+    Async Groq call with:
+    - Semaphore to cap concurrent requests (GROQ_CONCURRENCY)
+    - Exponential backoff retry on rate-limit (429) errors
+    This makes batch scoring of 100 calls safe on the free tier.
+    """
+    async with get_groq_semaphore():
+        loop = asyncio.get_event_loop()
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: client.chat.completions.create(
+                        messages=[{"role": "user", "content": prompt_text}],
+                        model="llama-3.1-8b-instant",
+                        temperature=0.0,
+                        response_format={"type": "json_object"},
+                    )
+                )
+                return json.loads(response.choices[0].message.content)
+            except Exception as e:
+                err_str = str(e).lower()
+                is_rate_limit = "429" in err_str or "rate limit" in err_str or "rate_limit" in err_str
+                if is_rate_limit and attempt < max_retries:
+                    wait = 2 ** attempt   # 2s, 4s, 8s, 16s
+                    print(f"  [GROQ] Rate limit hit (attempt {attempt}), retrying in {wait}s…")
+                    await asyncio.sleep(wait)
+                    continue
+                raise  # re-raise on non-rate-limit errors or exhausted retries
+
+
 def call_llama(prompt_text: str) -> dict:
+    """Sync wrapper kept for backward compatibility."""
     response = client.chat.completions.create(
         messages=[{"role": "user", "content": prompt_text}],
         model="llama-3.1-8b-instant",
@@ -708,7 +989,17 @@ async def _run_scoring(conversation_text: str, filename: str,
     llm_input = anon[:8000]
 
     print("Running LLM evaluation…")
-    result_json = call_llama(build_prompt(llm_input))
+    # ── RAG: fetch relevant policy chunks for this conversation ───────────────
+    policy_chunks = await _fetch_policy_context(conversation_text)
+    policy_used   = len(policy_chunks) > 0
+    if policy_used:
+        print(f"  [RAG] Injecting {len(policy_chunks)} policy chunks into prompt")
+    else:
+        print("  [RAG] No policy loaded — using generic rubrics")
+
+    result_json = await call_llama_async(build_prompt(llm_input, policy_chunks))
+    result_json["policy_context_used"] = policy_used
+    result_json["policy_chunks_count"] = len(policy_chunks)
 
     result_json["efficiency_score"]  = eff
     result_json["avg_response_time"] = avg_rt
@@ -769,21 +1060,92 @@ async def analyze_quality_direct(req: DirectScoreRequest):
     """
     print(f"\n--- DIRECT SCORING: {req.filename} ({len(req.transcript)} turns) ---")
     try:
-        rows = [
-            f"{r.speaker}: {r.text}"
-            for r in req.transcript
-            if r.text.strip()
-        ]
+        rows = [f"{r.speaker}: {r.text}" for r in req.transcript if r.text.strip()]
         if not rows:
             raise ValueError("Transcript is empty.")
-        conversation_text = "\n".join(rows)
-        return await _run_scoring(conversation_text, req.filename)
+        return await _run_scoring("\n".join(rows), req.filename)
     except Exception as e:
         print("ERROR:", str(e))
         err = _ERROR_RESULT(str(e))
         with open(SCORES_FILE, "w") as f:
             json.dump(err, f, indent=4)
         return err
+
+
+# ── In-memory scoring job store (mirrors transcription job pattern) ──────────
+_SCORE_JOBS: dict = {}
+
+
+class BatchScoreRequest(BaseModel):
+    files: list[DirectScoreRequest]
+
+
+@app.post("/score-batch")
+async def score_batch(req: BatchScoreRequest):
+    """
+    Submit a batch of transcripts for async quality scoring.
+    Returns a score_job_id immediately — poll /score-job/{id} for progress.
+    Groq calls are semaphore-limited (GROQ_CONCURRENCY=3 default) with
+    exponential backoff on rate limits — safe for 100 calls on free tier.
+    """
+    if not req.files:
+        raise HTTPException(status_code=400, detail="No files provided.")
+    if len(req.files) > 100:
+        raise HTTPException(status_code=400, detail="Max 100 files per batch.")
+
+    job_id = str(uuid.uuid4())[:8]
+    _SCORE_JOBS[job_id] = {
+        "status":  "queued",
+        "total":   len(req.files),
+        "done":    0,
+        "failed":  0,
+        "results": [],
+    }
+
+    async def _run_score_job():
+        job = _SCORE_JOBS[job_id]
+        job["status"] = "running"
+
+        async def score_one(item: DirectScoreRequest):
+            try:
+                rows = [f"{r.speaker}: {r.text}" for r in item.transcript if r.text.strip()]
+                if not rows:
+                    raise ValueError("Empty transcript")
+                result = await _run_scoring("\n".join(rows), item.filename)
+                job["results"].append({"filename": item.filename, "status": "success", "scores": result})
+                job["done"] += 1
+                print(f"[SCORE JOB {job_id}] {job['done']}/{job['total']} — {item.filename}")
+            except Exception as e:
+                job["results"].append({"filename": item.filename, "status": "error", "error": str(e)})
+                job["failed"] += 1
+                print(f"[SCORE JOB {job_id}] FAILED — {item.filename}: {e}")
+
+        # All fire — semaphore inside call_llama_async caps real concurrency
+        await asyncio.gather(*[score_one(item) for item in req.files])
+        job["status"] = "complete"
+        print(f"[SCORE JOB {job_id}] Complete — {job['done']} ok, {job['failed']} failed")
+
+    asyncio.create_task(_run_score_job())
+    print(f"[SCORE BATCH] Job {job_id} started — {len(req.files)} files, concurrency={GROQ_CONCURRENCY}")
+    return {"score_job_id": job_id, "total": len(req.files), "status": "queued",
+            "message": f"Poll /score-job/{job_id} for progress."}
+
+
+@app.get("/score-job/{job_id}")
+async def get_score_job(job_id: str):
+    """
+    Poll for scoring progress.
+    Returns { score_job_id, status, total, done, failed, percent, results[] }
+    When complete, results[] contains per-file scores.
+    """
+    job = _SCORE_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Score job {job_id} not found.")
+    total   = max(job["total"], 1)
+    percent = round(((job["done"] + job["failed"]) / total) * 100)
+    return {"score_job_id": job_id, "status": job["status"], "total": job["total"],
+            "done": job["done"], "failed": job["failed"],
+            "percent": percent, "results": job["results"]}
 
 
 @app.get("/get-quality-scores")
@@ -921,9 +1283,439 @@ async def evaluate_chat_file(file: UploadFile = File(...)):
         return {"error": str(e)}
 
 
+# ==============================================================================
+# RAG / POLICY ENDPOINTS  (integrated directly — no separate rag_server needed)
+# ==============================================================================
+
+@app.post("/upload-policy")
+async def upload_policy(file: UploadFile = File(...)):
+    """
+    Upload a policy document (PDF or TXT).
+
+    If PINECONE_API_KEY is set and RAG libs are installed:
+      → Chunks the doc, embeds locally (sentence-transformers), upserts to Pinecone.
+      → All future scoring calls will retrieve relevant chunks and score compliance
+        against YOUR policy instead of generic best-practice rubrics.
+
+    If RAG is not configured:
+      → Returns a clear error explaining what's missing.
+    """
+    if not _rag_available():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "RAG pipeline not available. "
+                "Ensure PINECONE_API_KEY is set in .env and RAG libraries are installed "
+                "(pip install -r requirements_rag.txt)."
+            )
+        )
+
+    # Robustly extract extension — handles Windows paths like C:\...\file.pdf
+    clean_name = file.filename.replace("\\", "/").split("/")[-1] if file.filename else ""
+    ext = clean_name.lower().rsplit(".", 1)[-1] if "." in clean_name else ""
+    if ext not in ("pdf", "txt", "docx"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '.{ext}'. Only PDF, TXT, and DOCX files are supported."
+        )
+
+    temp_path = os.path.join(UPLOAD_TEMP_DIR, clean_name)
+    raw_bytes = await file.read()
+    with open(temp_path, "wb") as fh:
+        fh.write(raw_bytes)
+
+    print(f"[RAG] Processing policy: {file.filename} ({len(raw_bytes):,} bytes)")
+
+    try:
+        # 1. Load document
+        loader   = PyPDFLoader(temp_path) if ext == "pdf" else TextLoader(temp_path, encoding="utf-8")
+        raw_docs = loader.load()
+        full_text = " ".join(d.page_content for d in raw_docs)
+        print(f"[RAG] Loaded {len(raw_docs)} page(s), {len(full_text):,} chars")
+
+        # 2. Split into chunks
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP,
+            separators=["\n\n", "\n", ". ", " ", ""],
+        )
+        chunks = splitter.split_documents(raw_docs)
+        if not chunks:
+            raise ValueError("Document produced no usable text chunks.")
+        print(f"[RAG] Split into {len(chunks)} chunks")
+
+        # 3. Embed locally
+        texts   = [c.page_content for c in chunks]
+        loop    = asyncio.get_event_loop()
+        vectors = await loop.run_in_executor(None, lambda: _embed(texts))
+        print(f"[RAG] Embedded {len(vectors)} chunks (dim={EMBEDDING_DIM})")
+
+        # 4. Upsert to Pinecone
+        index     = _get_pinecone_index()
+        namespace = _make_namespace(clean_name)
+
+        # Clear existing vectors in this namespace (clean replace)
+        try:
+            index.delete(delete_all=True, namespace=namespace)
+        except Exception:
+            pass  # namespace didn't exist yet
+
+        records = [
+            {
+                "id":     f"{namespace}_{i}",
+                "values": vectors[i],
+                "metadata": {"text": texts[i], "filename": clean_name, "chunk_idx": i},
+            }
+            for i in range(len(vectors))
+        ]
+        for start in range(0, len(records), UPSERT_BATCH):
+            batch = records[start : start + UPSERT_BATCH]
+            await loop.run_in_executor(
+                None,
+                lambda b=batch: index.upsert(vectors=b, namespace=namespace)
+            )
+            print(f"[RAG] Upserted {start}–{start + len(batch) - 1}")
+
+        # 5. Save metadata
+        meta = {
+            "filename":        clean_name,
+            "namespace":       namespace,
+            "uploaded_at":     datetime.now().isoformat(),
+            "chunk_count":     len(chunks),
+            "char_count":      len(full_text),
+            "embedding_model": EMBEDDING_MODEL,
+            "pinecone_index":  PINECONE_INDEX_NAME,
+        }
+        _save_policy_meta(meta)
+
+        print(f"[RAG] Done — namespace='{namespace}', {len(chunks)} vectors in Pinecone")
+        return {
+            "status":    "success",
+            "filename":  clean_name,
+            "namespace": namespace,
+            "chunks":    len(chunks),
+            "message":   (
+                f"Policy '{clean_name}' indexed into {len(chunks)} chunks. "
+                f"Scoring will now check compliance against this policy."
+            ),
+        }
+
+    except Exception as e:
+        print(f"[RAG] Upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.get("/policy-status")
+async def policy_status():
+    """
+    Returns the currently active policy info and live Pinecone vector count.
+    The UI can poll this to show whether RAG-based scoring is active.
+    """
+    if not _rag_available():
+        return {
+            "loaded":   False,
+            "rag_ready": False,
+            "message":  "RAG not configured (PINECONE_API_KEY missing or libs not installed).",
+        }
+
+    meta = _load_policy_meta()
+    if not meta:
+        return {"loaded": False, "rag_ready": True,
+                "message": "No policy uploaded yet. Upload a PDF or TXT to enable policy-aware scoring."}
+
+    # Live vector count from Pinecone
+    vector_count = 0
+    try:
+        index  = _get_pinecone_index()
+        stats  = index.describe_index_stats()
+        ns_info = stats.get("namespaces", {}).get(meta.get("namespace", ""), {})
+        vector_count = ns_info.get("vector_count", 0)
+    except Exception:
+        pass
+
+    return {
+        "loaded":          True,
+        "rag_ready":       True,
+        "filename":        meta.get("filename"),
+        "namespace":       meta.get("namespace"),
+        "uploaded_at":     meta.get("uploaded_at"),
+        "chunk_count":     meta.get("chunk_count", 0),
+        "char_count":      meta.get("char_count", 0),
+        "vector_count":    vector_count,
+        "embedding_model": meta.get("embedding_model"),
+        "pinecone_index":  meta.get("pinecone_index"),
+    }
+
+
+@app.get("/list-policies")
+async def list_policies():
+    """Lists all uploaded policy namespaces in Pinecone. Useful for switching between policies."""
+    if not _rag_available():
+        raise HTTPException(status_code=503, detail="RAG not configured.")
+    try:
+        index      = _get_pinecone_index()
+        stats      = index.describe_index_stats()
+        namespaces = stats.get("namespaces", {})
+        active_ns  = _load_policy_meta().get("namespace", "")
+        return {
+            "policies": [
+                {
+                    "namespace":    ns,
+                    "vector_count": info.get("vector_count", 0),
+                    "active":       ns == active_ns,
+                }
+                for ns, info in namespaces.items()
+            ],
+            "active_namespace": active_ns,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/switch-policy/{namespace}")
+async def switch_policy(namespace: str):
+    """
+    Switch the active policy to a previously uploaded namespace.
+    No re-upload needed — vectors already exist in Pinecone.
+    """
+    if not _rag_available():
+        raise HTTPException(status_code=503, detail="RAG not configured.")
+    try:
+        index = _get_pinecone_index()
+        stats = index.describe_index_stats()
+        if namespace not in stats.get("namespaces", {}):
+            raise HTTPException(status_code=404, detail=f"Namespace '{namespace}' not found.")
+        meta = _load_policy_meta()
+        meta["namespace"] = namespace
+        _save_policy_meta(meta)
+        return {"status": "switched", "active_namespace": namespace}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/clear-policy")
+async def clear_policy():
+    """Delete the active policy namespace from Pinecone and clear local metadata."""
+    meta      = _load_policy_meta()
+    namespace = meta.get("namespace", "")
+    if namespace and _rag_available():
+        try:
+            index = _get_pinecone_index()
+            index.delete(delete_all=True, namespace=namespace)
+            print(f"[RAG] Deleted namespace '{namespace}' from Pinecone")
+        except Exception as e:
+            print(f"[RAG] Could not delete namespace: {e}")
+    if os.path.exists(POLICY_META_FILE):
+        os.remove(POLICY_META_FILE)
+    return {"status": "cleared", "namespace": namespace}
+
+
+@app.get("/alerts")
+async def get_alerts():
+    """
+    Evaluates ONLY the current session's scores and returns compliance alerts.
+
+    Source priority:
+      1. SCORES_HISTORY_FILE — used when batch was run (multiple files this session)
+      2. SCORES_FILE         — used for single-file uploads (latest call only)
+
+    This means alerts always match what the Reports page is showing right now.
+
+    Severity (strict less-than — score AT threshold is NOT an alert):
+      critical  — score < 4   → immediate action required
+      warning   — score < 6   → needs attention
+      info      — score < 8   → minor improvement needed
+    """
+    alerts = []
+
+    # ── Thresholds (strict less-than boundaries) ───────────────────────────────
+    THRESHOLDS = {
+        "compliance":               {"critical": 4, "warning": 6, "info": 8},
+        "empathy":                  {"critical": 4, "warning": 6, "info": 8},
+        "resolution":               {"critical": 4, "warning": 6, "info": 8},
+        "efficiency_score":         {"critical": 4, "warning": 6, "info": 8},
+        "bias.overall_fairness":    {"critical": 4, "warning": 6, "info": 8},
+        "bias.language_neutrality": {"critical": 4, "warning": 6, "info": 8},
+        "bias.tone_consistency":    {"critical": 4, "warning": 6, "info": 8},
+    }
+
+    ALERT_META = {
+        "compliance": {
+            "category": "Compliance",
+            "critical": ("Critical Compliance Failure", "Agent severely failed to follow required protocols. Immediate review needed.",
+                         "🔴 Escalate to supervisor immediately. Pull call recording and conduct 1-on-1 coaching session."),
+            "warning":  ("Compliance Gap Detected",    "Agent missed key compliance steps. Training recommended.",
+                         "🟡 Schedule targeted compliance training. Review ID verification and closing scripts with agent."),
+            "info":     ("Minor Compliance Issue",     "Agent skipped some steps.",
+                         "🔵 Remind agent of full protocol checklist in next team meeting."),
+        },
+        "empathy": {
+            "category": "Empathy",
+            "critical": ("Very Low Empathy",   "Agent showed little to no empathy. Customer experience severely impacted.",
+                         "🔴 Mandatory empathy coaching required. Use call recording as training example."),
+            "warning":  ("Low Empathy Score",  "Agent empathy was below standard.",
+                         "🟡 Coach agent on active listening and personalisation. Practice empathy phrases."),
+            "info":     ("Empathy Needs Work", "Agent empathy could be improved.",
+                         "🔵 Encourage agent to use customer name and acknowledge feelings more consistently."),
+        },
+        "resolution": {
+            "category": "Resolution",
+            "critical": ("Issue Unresolved",       "Customer issue was not addressed. Escalation may be needed.",
+                         "🔴 Follow up with customer immediately. Review why agent could not resolve and escalate if needed."),
+            "warning":  ("Poor Resolution Rate",   "Agent failed to resolve the customer issue properly.",
+                         "🟡 Coach agent on problem-solving steps. Review resolution workflow and escalation triggers."),
+            "info":     ("Incomplete Resolution",  "Issue was only partially resolved.",
+                         "🔵 Remind agent to confirm resolution with customer before closing."),
+        },
+        "efficiency_score": {
+            "category": "Efficiency",
+            "critical": ("Very Inefficient Call",  "Call was excessively long and circular. Process review needed.",
+                         "🔴 Identify root cause — knowledge gap or process issue. Provide call handling framework."),
+            "warning":  ("Low Efficiency",         "Call had unnecessary turns and repetition.",
+                         "🟡 Coach agent on concise communication. Review call structure and use of knowledge base."),
+            "info":     ("Efficiency Improvement", "Call could have been resolved more concisely.",
+                         "🔵 Suggest agent use standard scripts to reduce unnecessary back-and-forth."),
+        },
+        "bias.overall_fairness": {
+            "category": "Fairness",
+            "critical": ("Critical Fairness Violation", "Severe bias or unfair treatment detected. Immediate review required.",
+                         "🔴 Mandatory bias and inclusion training. HR review may be required."),
+            "warning":  ("Fairness Concern",            "Agent showed signs of inconsistent treatment.",
+                         "🟡 Discuss with agent. Review call recording and coach on consistent, neutral behaviour."),
+            "info":     ("Fairness Improvement",        "Minor fairness issues detected.",
+                         "🔵 Reinforce equal-effort standards in next team review."),
+        },
+        "bias.language_neutrality": {
+            "category": "Language",
+            "critical": ("Prohibited Language Detected", "Agent used dismissive or non-neutral language.",
+                         "🔴 Immediate coaching on prohibited phrases. Flag call for compliance record."),
+            "warning":  ("Language Neutrality Issue",    "Agent used potentially dismissive language.",
+                         "🟡 Share approved language guide with agent. Highlight specific phrases to avoid."),
+            "info":     ("Language Suggestion",          "Agent language could be more neutral.",
+                         "🔵 Suggest agent replace informal/assumption-based phrasing with neutral alternatives."),
+        },
+        "bias.tone_consistency": {
+            "category": "Tone",
+            "critical": ("Inconsistent Tone",    "Agent tone was unprofessional throughout the call.",
+                         "🔴 Immediate tone and professionalism training. Review full call recording."),
+            "warning":  ("Tone Issue Detected",  "Agent did not maintain required professional tone.",
+                         "🟡 Coach agent on maintaining consistent tone from greeting to closing."),
+            "info":     ("Tone Improvement",     "Agent tone was inconsistent at some points.",
+                         "🔵 Remind agent about required greeting and closing phrases per script."),
+        },
+    }
+
+    def _get_severity(key: str, score: float) -> str | None:
+        t = THRESHOLDS.get(key, {})
+        # Strict less-than: score AT the threshold is NOT an alert
+        if score < t.get("critical", 0): return "critical"
+        if score < t.get("warning",  0): return "warning"
+        if score < t.get("info",     0): return "info"
+        return None
+
+    def _make_alert(key: str, score: float, file_name: str = "", idx: int = 0) -> dict | None:
+        severity = _get_severity(key, score)
+        if not severity:
+            return None
+        meta  = ALERT_META.get(key, {})
+        parts = meta.get(severity, ("Issue Detected", "Score below threshold.", "Review this area."))
+        title, message, action = parts if len(parts) == 3 else (*parts, "Review this area.")
+        return {
+            "id":        f"{key}_{file_name}_{idx}",
+            "severity":  severity,
+            "category":  meta.get("category", key),
+            "title":     title,
+            "message":   message,
+            "action":    action,
+            "score":     round(score, 1),
+            "threshold": THRESHOLDS[key][severity],
+            "file_name": file_name,
+        }
+
+    def _extract_scores_from_entry(entry: dict) -> list[tuple[str, float]]:
+        pairs = []
+        for key in ["compliance", "empathy", "resolution", "efficiency_score"]:
+            val = entry.get(key)
+            if isinstance(val, (int, float)) and val > 0:
+                pairs.append((key, float(val)))
+        bias = entry.get("bias", {})
+        if isinstance(bias, dict):
+            for bkey in ["overall_fairness", "language_neutrality", "tone_consistency"]:
+                val = bias.get(bkey)
+                if isinstance(val, (int, float)) and val > 0:
+                    pairs.append((f"bias.{bkey}", float(val)))
+        return pairs
+
+    # ── Use SCORES_HISTORY_FILE if it exists (current session / batch) ──────────
+    # This file is cleared at /start-session so it always reflects THIS session only
+    if os.path.exists(SCORES_HISTORY_FILE):
+        try:
+            with open(SCORES_HISTORY_FILE, "r") as f:
+                history = json.load(f)
+            for idx, entry in enumerate(history):
+                fname = entry.get("file_name", f"file_{idx+1}")
+                for key, score in _extract_scores_from_entry(entry):
+                    alert = _make_alert(key, score, fname, idx)
+                    if alert:
+                        alerts.append(alert)
+        except Exception as e:
+            print(f"[ALERTS] History read error: {e}")
+
+    # ── Fallback: SCORES_FILE only (single upload, no history yet) ──────────────
+    if not alerts and os.path.exists(SCORES_FILE):
+        try:
+            with open(SCORES_FILE, "r") as f:
+                entry = json.load(f)
+            fname = entry.get("file_name", "latest")
+            for key, score in _extract_scores_from_entry(entry):
+                alert = _make_alert(key, score, fname, 0)
+                if alert:
+                    alerts.append(alert)
+        except Exception as e:
+            print(f"[ALERTS] Scores file read error: {e}")
+
+    # Sort: critical → warning → info, then by score ascending within same severity
+    severity_order = {"critical": 0, "warning": 1, "info": 2}
+    alerts.sort(key=lambda a: (severity_order.get(a["severity"], 3), a["score"]))
+
+    # Deduplicate: if same key+file appears multiple times keep the worst (lowest score)
+    seen: dict = {}
+    deduped = []
+    for a in alerts:
+        dedup_key = f"{a['category']}_{a['file_name']}"
+        if dedup_key not in seen or a["score"] < seen[dedup_key]:
+            seen[dedup_key] = a["score"]
+            deduped.append(a)
+    alerts = deduped
+
+    critical_count = sum(1 for a in alerts if a["severity"] == "critical")
+    warning_count  = sum(1 for a in alerts if a["severity"] == "warning")
+
+    print(f"[ALERTS] {len(alerts)} alerts — {critical_count} critical, {warning_count} warning")
+    return {
+        "alerts":         alerts,
+        "total":          len(alerts),
+        "critical_count": critical_count,
+        "warning_count":  warning_count,
+        "has_critical":   critical_count > 0,
+    }
+
+
+
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    meta = _load_policy_meta()
+    return {
+        "status":           "ok",
+        "rag_available":    _rag_available(),
+        "policy_loaded":    _policy_loaded(),
+        "active_namespace": meta.get("namespace", "none") if meta else "none",
+        "pinecone_index":   PINECONE_INDEX_NAME if _rag_available() else "n/a",
+    }
 
 
 if __name__ == "__main__":

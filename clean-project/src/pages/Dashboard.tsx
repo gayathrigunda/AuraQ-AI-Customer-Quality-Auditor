@@ -3,7 +3,8 @@ import { AppLayout } from "@/components/AppLayout";
 import {
   Upload, Mic, Search, Download, FileAudio, FileText,
   Loader2, Sparkles, Layers, X, CheckCircle2, AlertCircle,
-  Clock, ChevronDown, ChevronUp, MessageSquare,
+  Clock, ChevronDown, ChevronUp, MessageSquare, ShieldCheck, ShieldOff, FileUp,
+  BellRing, AlertTriangle, Info,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -153,8 +154,12 @@ const Dashboard = () => {
   const [files,            setFiles]            = useState<File[]>([]);
   const [uploading,        setUploading]        = useState(false);
   const [uploadStatus,     setUploadStatus]     = useState<string>("");
-  const [transcript,       setTranscript]       = useState<TranscriptEntry[]>([]);
-  const [summary,          setSummary]          = useState<string>("");
+  const [transcript,       setTranscript]       = useState<TranscriptEntry[]>(() => {
+    try { const s = sessionStorage.getItem('auraq_last_transcript'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+  const [summary,          setSummary]          = useState<string>(() => {
+    try { return sessionStorage.getItem('auraq_last_summary') ?? ''; } catch { return ''; }
+  });
   const [searchTranscript, setSearchTranscript] = useState("");
   const [lastFileType,     setLastFileType]     = useState<"audio" | "text" | "">("");
   const [qualityStatus,    setQualityStatus]    = useState<string>("");
@@ -173,6 +178,128 @@ const Dashboard = () => {
       next.has(idx) ? next.delete(idx) : next.add(idx);
       return next;
     });
+  };
+
+  // ── compliance alerts ─────────────────────────────────────────────────────
+  type ComplianceAlert = {
+    id: string;
+    severity: "critical" | "warning" | "info";
+    category: string;
+    title: string;
+    message: string;
+    action: string;
+    score: number;
+    threshold: number;
+    file_name: string;
+  };
+  const [alerts,         setAlerts]         = useState<ComplianceAlert[]>([]);
+  const [alertsDismissed, setAlertsDismissed] = useState(false);
+  const [hasCritical,    setHasCritical]    = useState(false);
+
+  const fetchAlerts = async () => {
+    try {
+      const res = await fetch(`${QUALITY_API}/alerts`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.total > 0) {
+        setAlerts(data.alerts);
+        setHasCritical(data.has_critical);
+        setAlertsDismissed(false);
+      } else {
+        setAlerts([]);
+      }
+    } catch {}
+  };
+
+  // ── policy state ──────────────────────────────────────────────────────────
+  type PolicyStatus = {
+    loaded: boolean;
+    rag_ready: boolean;
+    filename?: string;
+    chunk_count?: number;
+    uploaded_at?: string;
+    message?: string;
+  };
+  const [policyStatus,       setPolicyStatus]       = useState<PolicyStatus | null>(null);
+  const [policyUploading,    setPolicyUploading]    = useState(false);
+  const [policyUploadMsg,    setPolicyUploadMsg]    = useState("");
+  const [policyDragOver,     setPolicyDragOver]     = useState(false);
+
+  // Fetch policy status on mount
+  useState(() => {
+    fetch(`${QUALITY_API}/policy-status`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setPolicyStatus(d); })
+      .catch(() => {});
+  });
+
+  const uploadPolicy = async (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!["pdf", "txt"].includes(ext)) {
+      setPolicyUploadMsg("⚠️ Only PDF or TXT files are supported.");
+      return;
+    }
+    setPolicyUploading(true);
+    setPolicyUploadMsg(`📄 Uploading ${file.name}…`);
+
+    // Use AbortController with 3-minute timeout.
+    // The first upload can take 20-30s extra if the embedding model
+    // needs to download (~90MB). Subsequent uploads are fast.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3 * 60 * 1000);
+
+    // Show a helpful message after 5s so user knows model may be loading
+    const hintTimer = setTimeout(() => {
+      setPolicyUploadMsg("⏳ Indexing policy… (first upload may take ~30s while the embedding model loads)");
+    }, 5000);
+
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${QUALITY_API}/upload-policy`, {
+        method: "POST",
+        body: fd,
+        signal: controller.signal,
+      });
+      clearTimeout(hintTimer);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? `Server error ${res.status}`);
+      setPolicyUploadMsg(`✅ Policy active — ${data.chunks} chunks indexed in Pinecone`);
+      // Refresh status panel
+      const sr = await fetch(`${QUALITY_API}/policy-status`);
+      if (sr.ok) setPolicyStatus(await sr.json());
+    } catch (err: any) {
+      clearTimeout(hintTimer);
+      if (err.name === "AbortError") {
+        setPolicyUploadMsg("❌ Upload timed out — server took too long. Try again.");
+      } else {
+        setPolicyUploadMsg(`❌ ${err.message}`);
+      }
+    } finally {
+      clearTimeout(timeout);
+      clearTimeout(hintTimer);
+      setPolicyUploading(false);
+    }
+  };
+
+  const clearPolicy = async () => {
+    try {
+      await fetch(`${QUALITY_API}/clear-policy`, { method: "DELETE" });
+      setPolicyStatus({ loaded: false, rag_ready: true });
+      setPolicyUploadMsg("Policy cleared — scoring will use generic rubrics.");
+    } catch {
+      setPolicyUploadMsg("❌ Could not clear policy.");
+    }
+  };
+
+  const handlePolicyBrowse = () => {
+    const input  = document.createElement("input");
+    input.type   = "file";
+    input.accept = ".pdf,.txt";
+    input.onchange = () => {
+      if (input.files?.[0]) uploadPolicy(input.files[0]);
+    };
+    input.click();
   };
 
   // ── single upload ─────────────────────────────────────────────────────────
@@ -212,7 +339,9 @@ const Dashboard = () => {
       const res  = await fetch(endpoint, { method: "POST", body: formData1 });
       if (!res.ok) throw new Error(`Transcription server error: ${res.status}`);
       const data = await res.json();
-      setSummary(data.summary ?? "");
+      const summaryText = data.summary ?? "";
+      setSummary(summaryText);
+      try { sessionStorage.setItem("auraq_last_summary", summaryText); } catch {}
       setUploadStatus(`✅ ${file.name} processed successfully`);
 
       // ── Fetch the transcript the server just wrote ────────────────────────
@@ -221,19 +350,22 @@ const Dashboard = () => {
         : `${CHAT_API}/get-text-transcript`;
       const tRes = await fetch(transcriptUrl);
       const transcriptRows: TranscriptEntry[] = tRes.ok ? await tRes.json() : [];
-      setTranscript(transcriptRows ?? []);
+      const rows = transcriptRows ?? [];
+      setTranscript(rows);
+      try { sessionStorage.setItem("auraq_last_transcript", JSON.stringify(rows)); } catch {}
 
       // ── Score using the transcript we just fetched — no port-8000 race ───
       setQualityStatus("🔍 Analyzing quality scores…");
       const qualityRes = await fetch(`${QUALITY_API}/analyze-quality-direct`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, transcript: transcriptRows }),
+        body: JSON.stringify({ filename: file.name, transcript: rows }),
       });
       if (!qualityRes.ok) throw new Error(`Quality server error: ${qualityRes.status}`);
       const qualityData: QualityScores = await qualityRes.json();
       localStorage.setItem(QUALITY_SCORES_KEY, JSON.stringify(qualityData));
       setQualityStatus("✅ Quality scores updated — check Reports page");
+      await fetchAlerts();
     } catch (err: any) {
       setUploadStatus(`❌ Error: ${err.message}`);
       setQualityStatus("");
@@ -461,6 +593,7 @@ const Dashboard = () => {
 
     setBatchRunning(false);
     setBatchDone(true);
+    await fetchAlerts();
   };
 
   // ── derived ───────────────────────────────────────────────────────────────
@@ -503,7 +636,7 @@ const Dashboard = () => {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="glass-card card-hover rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-4">
               <span className="h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
@@ -516,23 +649,200 @@ const Dashboard = () => {
           </div>
           <div className="glass-card card-hover rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-4">
-              <span className="h-2 w-2 rounded-full bg-success" />
-              <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">Avg Satisfaction</span>
+              <span className="h-2 w-2 rounded-full bg-chart-2" />
+              <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">Avg Quality Score</span>
             </div>
-            <div className="text-4xl font-heading font-black">—</div>
+            <div className="text-4xl font-heading font-black">
+              {(() => {
+                const scores = JSON.parse(localStorage.getItem(QUALITY_SCORES_KEY) || "{}");
+                if (!scores.empathy) return "—";
+                const avg = Math.round((scores.empathy + scores.compliance + scores.resolution + (scores.proficiency || 0)) / 4);
+                return avg;
+              })()}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              last {mode === "batch" ? batchFiles.length || 0 : files.length > 0 ? files.length : 4} files
+              {mode === "batch" ? `${batchSucceeded}/${batchTotal} processed` : "from quality analysis"}
             </p>
           </div>
-          <div className="glass-card card-hover rounded-2xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="h-2 w-2 rounded-full bg-chart-4" />
-              <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-semibold">Avg Emotion</span>
+        </div>
+
+        {/* ── Policy Document (RAG) ─────────────────────────────────────── */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setPolicyDragOver(true); }}
+          onDragLeave={() => setPolicyDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setPolicyDragOver(false);
+            const f = e.dataTransfer.files[0];
+            if (f) uploadPolicy(f);
+          }}
+          className={`glass-card rounded-2xl border transition-all ${
+            policyDragOver
+              ? "border-chart-4 bg-chart-4/5"
+              : policyStatus?.loaded
+              ? "border-success/30 bg-success/5"
+              : "border-border/30"
+          }`}
+        >
+          <div className="px-6 py-4 flex items-center gap-4 flex-wrap">
+
+            {/* Icon */}
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              policyStatus?.loaded ? "bg-success/15" : "bg-muted/50"
+            }`}>
+              {policyStatus?.loaded
+                ? <ShieldCheck className="h-5 w-5 text-success" />
+                : <ShieldOff   className="h-5 w-5 text-muted-foreground" />}
             </div>
-            <div className="text-4xl font-heading font-black">—</div>
-            <p className="text-xs text-muted-foreground mt-1">no data yet</p>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold">Policy Document</p>
+                {policyStatus?.loaded
+                  ? <span className="text-[10px] font-bold bg-success/10 text-success px-2 py-0.5 rounded-full uppercase tracking-widest">Active</span>
+                  : policyStatus?.rag_ready === false
+                  ? <span className="text-[10px] font-bold bg-destructive/10 text-destructive px-2 py-0.5 rounded-full uppercase tracking-widest">RAG not configured</span>
+                  : <span className="text-[10px] font-bold bg-muted/50 text-muted-foreground px-2 py-0.5 rounded-full uppercase tracking-widest">Not uploaded</span>}
+              </div>
+
+              {policyStatus?.loaded ? (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {policyStatus.filename} · {policyStatus.chunk_count} chunks indexed
+                  {policyStatus.uploaded_at && ` · ${new Date(policyStatus.uploaded_at).toLocaleTimeString()}`}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {policyStatus?.rag_ready === false
+                    ? "Set PINECONE_API_KEY in .env and install requirements_rag.txt"
+                    : "Upload a PDF or TXT to score calls against your company policy"}
+                </p>
+              )}
+
+              {policyUploadMsg && (
+                <p className="text-xs mt-1 text-muted-foreground">{policyUploadMsg}</p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {policyStatus?.loaded && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearPolicy}
+                  className="rounded-lg text-destructive border-destructive/30 hover:bg-destructive/10 text-xs h-8"
+                >
+                  <X className="h-3.5 w-3.5 mr-1" /> Clear
+                </Button>
+              )}
+              <Button
+                size="sm"
+                disabled={policyUploading || policyStatus?.rag_ready === false}
+                onClick={handlePolicyBrowse}
+                className="rounded-lg bg-gradient-to-r from-chart-4/80 to-chart-4 text-white hover:opacity-90 text-xs h-8 gap-1.5"
+              >
+                {policyUploading
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+                  : <><FileUp  className="h-3.5 w-3.5" /> {policyStatus?.loaded ? "Replace" : "Upload Policy"}</>}
+              </Button>
+            </div>
+
           </div>
         </div>
+
+        {/* ── Compliance Alerts ────────────────────────────────────────── */}
+        {alerts.length > 0 && !alertsDismissed && (
+          <div className={`rounded-2xl border overflow-hidden ${
+            hasCritical
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-warning/40 bg-warning/5"
+          }`}>
+            {/* Header */}
+            <div className={`px-5 py-3 flex items-center justify-between border-b ${
+              hasCritical ? "border-destructive/20 bg-destructive/10" : "border-warning/20 bg-warning/10"
+            }`}>
+              <div className="flex items-center gap-2">
+                <BellRing className={`h-4 w-4 ${hasCritical ? "text-destructive" : "text-warning"}`} />
+                <span className={`text-sm font-bold ${hasCritical ? "text-destructive" : "text-warning"}`}>
+                  {hasCritical ? "⚠️ Critical Compliance Issues Detected" : "Compliance Alerts"}
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  hasCritical
+                    ? "bg-destructive/20 text-destructive"
+                    : "bg-warning/20 text-warning"
+                }`}>
+                  {alerts.length} alert{alerts.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <button
+                onClick={() => setAlertsDismissed(true)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Alert list */}
+            <div className="divide-y divide-border/20 max-h-[320px] overflow-y-auto">
+              {alerts.map((alert) => {
+                const isCrit = alert.severity === "critical";
+                const isWarn = alert.severity === "warning";
+                const icon = isCrit
+                  ? <AlertCircle  className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                  : isWarn
+                  ? <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
+                  : <Info          className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />;
+                const severityColor = isCrit
+                  ? "text-destructive bg-destructive/10"
+                  : isWarn
+                  ? "text-warning bg-warning/10"
+                  : "text-primary bg-primary/10";
+                return (
+                  <div key={alert.id} className="px-5 py-3.5 flex items-start gap-3">
+                    {icon}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold">{alert.title}</span>
+                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${severityColor}`}>
+                          {alert.severity}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
+                          {alert.category}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{alert.message}</p>
+                      {alert.action && (
+                        <div className={`mt-1.5 px-2.5 py-1.5 rounded-lg text-[11px] border-l-2 ${
+                          isCrit
+                            ? "bg-destructive/5 border-destructive/40 text-destructive/90"
+                            : isWarn
+                            ? "bg-warning/5 border-warning/40 text-warning/90"
+                            : "bg-primary/5 border-primary/40 text-primary/90"
+                        }`}>
+                          <span className="font-semibold">Suggestion: </span>{alert.action}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[11px] text-muted-foreground">
+                          Score: <span className={`font-bold ${isCrit ? "text-destructive" : isWarn ? "text-warning" : "text-primary"}`}>
+                            {alert.score}/10
+                          </span>
+                          <span className="text-muted-foreground/60"> (threshold: {alert.threshold})</span>
+                        </span>
+                        {alert.file_name && alert.file_name !== "latest" && (
+                          <span className="text-[10px] text-muted-foreground italic truncate max-w-[200px]">
+                            {alert.file_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Mode Toggle ──────────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 p-1 bg-muted/40 rounded-xl w-fit border border-border/30">
