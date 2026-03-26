@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
+
 # ── RAG: LangChain + Pinecone + local embeddings ─────────────────────────────
 try:
     # langchain_text_splitters is the correct package in LangChain >= 0.2
