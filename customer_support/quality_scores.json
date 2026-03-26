@@ -38,29 +38,6 @@
         },
         {
             "stage": "Fixing",
-<<<<<<< HEAD
-            "score": 3
-        },
-        {
-            "stage": "Solved",
-            "score": 2
-        }
-    ],
-    "customer_emotion": "Neutral",
-    "emotion_confidence": 80,
-    "customer_satisfaction": "Somewhat Satisfied",
-    "satisfaction_percentage": 40,
-    "satisfaction_confidence": 70,
-    "reasoning": "Customer's neutral tone and lack of strong emotional expression throughout the conversation justify the Neutral emotion score. The customer's somewhat satisfied satisfaction score is due to the fact that their issue was partially resolved, but they did not express strong enthusiasm or gratitude at the end of the call.",
-    "efficiency_score": 5,
-    "avg_response_time": 0.0,
-    "bias": {
-        "name_neutrality": 4,
-        "language_neutrality": 1,
-        "tone_consistency": 7,
-        "equal_effort": 7,
-        "overall_fairness": 5
-=======
             "score": 9
         },
         {
@@ -85,7 +62,6 @@
         "tone_consistency": 7,
         "equal_effort": 2,
         "overall_fairness": 6
->>>>>>> b2ab68ce798d61a8966d0a8b06048b5ccc3affad
     },
     "customer_emotion_emoji": "\ud83d\ude10",
     "customer_satisfaction_emoji": "\ud83d\ude1f"
