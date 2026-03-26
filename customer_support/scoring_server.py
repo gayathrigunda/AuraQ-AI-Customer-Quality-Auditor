@@ -33,7 +33,7 @@ try:
 except ImportError:
     _RAG_LIBS_AVAILABLE = False
     print("[RAG] WARNING: RAG libraries not installed. "
-          "Run: pip install -r requirements_rag.txt  "
+          "Run: pip install -r requirements.txt  "
           "Policy upload will be disabled until then.")
 
 # --- CONFIGURATION ---
@@ -1306,7 +1306,7 @@ async def upload_policy(file: UploadFile = File(...)):
             detail=(
                 "RAG pipeline not available. "
                 "Ensure PINECONE_API_KEY is set in .env and RAG libraries are installed "
-                "(pip install -r requirements_rag.txt)."
+                "(pip install -r requirements.txt)."
             )
         )
 
