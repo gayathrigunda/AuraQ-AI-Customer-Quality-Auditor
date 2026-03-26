@@ -1,73 +1,220 @@
-# Welcome to your Lovable project
+# 🎯 AuraQ — AI Customer Quality Auditor
 
-## Project info
+> Automate your customer support QA process with AI-powered transcription, scoring, emotion detection, and audit intelligence.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+![Version](https://img.shields.io/badge/version-v1.0.0-blue)
+![Status](https://img.shields.io/badge/status-Live-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Sprint](https://img.shields.io/badge/sprints-4-orange)
+![Team](https://img.shields.io/badge/team-3%20members-purple)
 
-## How can I edit this code?
+🔗 **Live Demo:** [aura-q-ai-customer-quality-auditor-eight.vercel.app](https://aura-q-ai-customer-quality-auditor-eight.vercel.app)
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+## 📌 Table of Contents
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- [About the Project](#about-the-project)
+- [Problem Statement](#problem-statement)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [API Endpoints](#api-endpoints)
+- [Team](#team)
+- [License](#license)
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## 📖 About the Project
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+**AuraQ** is an AI-powered Customer Quality Auditor that automates the evaluation of customer-agent interactions. It accepts both audio call recordings and text/chat logs, analyses them using advanced AI models, and delivers deep quality insights through an interactive dashboard.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Built using **Agile methodology** across **4 sprints (8 weeks)** by a team of 3 developers.
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## ❗ Problem Statement
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Customer support organisations rely on manual QA processes where supervisors randomly sample only **5–10% of interactions**. This leads to:
 
-# Step 3: Install the necessary dependencies.
-npm i
+- ❌ Inconsistent and biased agent evaluations
+- ❌ Missed compliance violations
+- ❌ No real-time visibility into customer sentiment
+- ❌ Inability to make data-driven decisions at scale
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+**AuraQ solves this by automating 100% of QA reviews with AI.**
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 🎙️ Audio Transcription | Upload call recordings — auto-transcribed with speaker diarisation (Agent/Customer split) using Deepgram Nova-2 |
+| 💬 Chat Log Analysis | Upload text/chat logs — dynamically parsed and summarised using Deepgram Text Intelligence |
+| 📊 Quality Scoring | Empathy, Compliance, Resolution scored 1–10 using Groq LLaMA 3.1 8B |
+| 😊 Emotion Detection | Customer emotion detected across 8 categories with 0–100% satisfaction score |
+| ⚖️ Fairness Analysis | Bias/fairness analysis with 4 sub-scores for equitable agent evaluation |
+| 🧠 RAG Intelligence | LangChain + Pinecone for contextual transcript retrieval and policy-aware scoring |
+| 📁 Policy Document Upload | Upload company policy docs — agents scored against real policies via RAG pipeline |
+| 📈 React Dashboard | Interactive charts, call history, batch upload, and IST timestamps |
+| 📄 Report Generation | Downloadable PDF and DOC audit reports per call |
+| 📱 Mobile Responsive | Fully responsive UI with bottom navigation for mobile access |
+| ☁️ Cloud Deployed | Frontend on Vercel, Backend on Render with UptimeRobot monitoring |
+
+---
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **React + Vite** — Single Page Application (SPA)
+- **Tailwind CSS** — Utility-first responsive styling
+- **Recharts** — Interactive data visualisation
+
+### Backend
+- **Python + FastAPI** — Unified REST API (main.py)
+
+### AI / ML Services
+- **Deepgram Nova-2** — Audio transcription + speaker diarisation
+- **Deepgram Text Intelligence** — Chat summarisation
+- **Groq LLaMA 3.1 8B** — Quality scoring + emotion detection
+- **LangChain + Pinecone** — RAG pipeline for contextual retrieval
+
+### Deployment & Monitoring
+- **Vercel** — Frontend hosting
+- **Render** — Backend hosting
+- **UptimeRobot** — 5-minute uptime monitoring
+
+---
+
+## 📁 Project Structure
+
+```
+AuraQ/
+│
+├── frontend/                  # React + Vite SPA
+│   ├── src/
+│   │   ├── components/        # Reusable UI components
+│   │   ├── pages/             # Dashboard, History, Reports
+│   │   └── App.jsx            # Main app entry
+│   ├── public/
+│   └── package.json
+│
+├── backend/                   # FastAPI Backend
+│   ├── main.py                # Unified server entry point
+│   ├── app.py                 # Audio transcription server
+│   ├── chat_app.py            # Text/chat analysis server
+│   ├── scoring/               # LLM scoring modules
+│   ├── rag/                   # LangChain + Pinecone RAG pipeline
+│   ├── file_scores/           # Per-file quality scores storage
+│   └── requirements.txt
+│
+└── README.md
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+Make sure you have the following installed:
+- **Node.js** (v18+)
+- **Python** (v3.10+)
+- **pip**
+
+---
+
+### 1️⃣ Clone the Repository
+
+```bash
+git clone https://github.com/your-username/auraq.git
+cd auraq
+```
+
+---
+
+### 2️⃣ Setup Backend
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+Backend runs at: `http://localhost:8000`
+
+---
+
+### 3️⃣ Setup Frontend
+
+```bash
+cd frontend
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Frontend runs at: `http://localhost:5173`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## 🔐 Environment Variables
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Create a `.env` file in the `backend/` folder and add the following:
 
-## What technologies are used for this project?
+```env
+DEEPGRAM_API_KEY=your_deepgram_api_key
+GROQ_API_KEY=your_groq_api_key
+PINECONE_API_KEY=your_pinecone_api_key
+PINECONE_ENV=your_pinecone_environment
+PINECONE_INDEX=your_pinecone_index_name
+```
 
-This project is built with:
+> ⚠️ Never commit your `.env` file to GitHub. Add it to `.gitignore`.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+---
 
-## How can I deploy this project?
+## 📡 API Endpoints
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/upload-audio` | Upload audio call file for transcription |
+| POST | `/upload-chat` | Upload text/chat log for summarisation |
+| GET | `/scores/{file_id}` | Get quality scores for a specific file |
+| GET | `/history` | Get call history with timestamps |
+| POST | `/upload-policy` | Upload policy document to RAG pipeline |
+| GET | `/rag-summary/{file_id}` | Get RAG-powered audit summary |
+| GET | `/report/{file_id}` | Download PDF/DOC report |
 
-## Can I connect a custom domain to my Lovable project?
+---
 
-Yes, you can!
+## 👥 Team
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+| Name | Role |
+|---|---|
+| **Gunda Lakshmi Gayathri** | Full-Stack Developer — Text server, emotion detection, dashboard, reports, deployment |
+| **Siddhi Dhamal** | AI/ML Engineer — Audio server, LLM scoring, RAG pipeline, Render deployment |
+| **Sowmya** | QA & Integration — Fairness analysis, charts, call history, monitoring |
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgements
+
+- [Deepgram](https://deepgram.com) — Audio transcription API
+- [Groq](https://groq.com) — Ultra-fast LLM inference
+- [LangChain](https://langchain.com) — RAG pipeline framework
+- [Pinecone](https://pinecone.io) — Vector database
+- [Vercel](https://vercel.com) — Frontend deployment
+- [Render](https://render.com) — Backend deployment
+
+---
+
+<p align="center">Made with ❤️ by Team AuraQ</p>
