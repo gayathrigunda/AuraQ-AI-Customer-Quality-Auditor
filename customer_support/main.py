@@ -10,9 +10,26 @@ from contextlib import asynccontextmanager
 load_dotenv(find_dotenv(), override=True)
 
 # Now import modules
-import app as audio_module
-import chat_app as chat_module
-import scoring_server as scoring_module
+try:
+    import app as audio_module
+    print("[STARTUP] app.py imported OK")
+except Exception as e:
+    print(f"[STARTUP ERROR] app.py failed: {e}")
+    raise
+
+try:
+    import chat_app as chat_module
+    print("[STARTUP] chat_app.py imported OK")
+except Exception as e:
+    print(f"[STARTUP ERROR] chat_app.py failed: {e}")
+    raise
+
+try:
+    import scoring_server as scoring_module
+    print("[STARTUP] scoring_server.py imported OK")
+except Exception as e:
+    print(f"[STARTUP ERROR] scoring_server.py failed: {e}")
+    raise
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -45,6 +62,9 @@ for route in chat_module.app.routes:
 for route in scoring_module.app.routes:
     if hasattr(route, "path") and route.path not in ["/", "/health", "/docs", "/redoc", "/openapi.json"]:
         main_app.router.routes.append(route)
+
+
+
 
 app = main_app
 
