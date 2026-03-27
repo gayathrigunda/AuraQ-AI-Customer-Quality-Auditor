@@ -14,9 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from groq import Groq
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+load_dotenv(find_dotenv(), override=True)
 
 # ── RAG: LangChain + Pinecone + local embeddings ─────────────────────────────
 try:
@@ -33,7 +33,7 @@ try:
 except ImportError:
     _RAG_LIBS_AVAILABLE = False
     print("[RAG] WARNING: RAG libraries not installed. "
-          "Run: pip install -r requirements_rag.txt  "
+          "Run: pip install -r requirements.txt  "
           "Policy upload will be disabled until then.")
 
 # --- CONFIGURATION ---
@@ -46,8 +46,18 @@ SCORES_FILE         = "quality_scores.json"
 SCORES_HISTORY_FILE = "quality_scores_history.json"
 
 # ── Pinecone config (optional — RAG is disabled if key is absent) ─────────────
-PINECONE_API_KEY    = os.environ.get("PINECONE_API_KEY", "")
+# ✅ This reads fresh every time it's called — after .env is loaded
+def _get_pinecone_config():
+    return {
+        "api_key":    os.environ.get("PINECONE_API_KEY", ""),
+        "index_name": os.environ.get("PINECONE_INDEX_NAME", "auraq-policy"),
+    }
+
+# Keep these for backward compatibility
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "auraq-policy")
+
+def _get_pinecone_api_key():
+    return os.environ.get("PINECONE_API_KEY", "")
 EMBEDDING_MODEL     = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 EMBEDDING_DIM       = 384          # must match your Pinecone index dimension
 CHUNK_SIZE          = 512
@@ -100,8 +110,7 @@ _embed_model     = None   # SentenceTransformer, loaded once on first use
 
 
 def _rag_available() -> bool:
-    """True only if RAG libs are installed AND a Pinecone API key is configured."""
-    return _RAG_LIBS_AVAILABLE and bool(PINECONE_API_KEY)
+    return _RAG_LIBS_AVAILABLE and bool(os.environ.get("PINECONE_API_KEY", ""))
 
 
 def _get_embed_model():
@@ -122,7 +131,7 @@ def _get_pinecone_index():
     if not _rag_available():
         return None
     try:
-        pc = Pinecone(api_key=PINECONE_API_KEY)
+        pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY", ""))
         existing = [idx.name for idx in pc.list_indexes()]
         if PINECONE_INDEX_NAME not in existing:
             print(f"[RAG] Creating Pinecone index '{PINECONE_INDEX_NAME}'…")
@@ -1306,7 +1315,7 @@ async def upload_policy(file: UploadFile = File(...)):
             detail=(
                 "RAG pipeline not available. "
                 "Ensure PINECONE_API_KEY is set in .env and RAG libraries are installed "
-                "(pip install -r requirements_rag.txt)."
+                "(pip install -r requirements.txt)."
             )
         )
 

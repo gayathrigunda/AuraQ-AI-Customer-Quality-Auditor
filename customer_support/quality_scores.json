@@ -1,20 +1,20 @@
 {
-    "empathy": 5,
-    "compliance": 8,
-    "resolution": 7,
+    "empathy": 8,
+    "compliance": 9,
+    "resolution": 9,
     "efficiency": 8,
     "empathy_timeline": [
         {
             "stage": "Start",
-            "score": 5
+            "score": 8
         },
         {
             "stage": "Mid",
-            "score": 5
+            "score": 8
         },
         {
             "stage": "End",
-            "score": 5
+            "score": 9
         }
     ],
     "compliance_steps": [
@@ -24,45 +24,45 @@
         },
         {
             "step": "Protocol",
-            "score": 8
+            "score": 10
         },
         {
             "step": "Closing",
-            "score": 8
+            "score": 10
         }
     ],
     "resolution_progress": [
         {
             "stage": "Discovery",
-            "score": 8
+            "score": 10
         },
         {
             "stage": "Fixing",
-            "score": 8
+            "score": 10
         },
         {
             "stage": "Solved",
-            "score": 6
+            "score": 10
         }
     ],
-    "customer_emotion": "Happy",
+    "customer_emotion": "Satisfied",
     "emotion_confidence": 80,
     "customer_satisfaction": "Satisfied",
     "satisfaction_percentage": 80,
     "satisfaction_confidence": 80,
-    "reasoning": "The customer was happy with the service and thanked the agent at the end. The issue was partially resolved, but the customer did not explicitly confirm satisfaction.",
+    "reasoning": "The customer seemed satisfied with the resolution, saying 'yeah that does sound pretty good' and 'yeah let's go ahead and use a visa'. The agent also offered a special promotion and explained the benefits of updating the map, which suggests that the customer's issue was resolved to their satisfaction.",
     "policy_violations": "None",
     "policy_context_used": true,
-    "policy_chunks_count": 3,
+    "policy_chunks_count": 5,
     "efficiency_score": 5,
     "avg_response_time": 0.0,
     "bias": {
-        "name_neutrality": 7,
+        "name_neutrality": 9,
         "language_neutrality": 10,
-        "tone_consistency": 8,
-        "equal_effort": 9,
-        "overall_fairness": 8
+        "tone_consistency": 7,
+        "equal_effort": 10,
+        "overall_fairness": 9
     },
-    "customer_emotion_emoji": "\ud83d\ude0a",
+    "customer_emotion_emoji": "\ud83d\ude0c",
     "customer_satisfaction_emoji": "\ud83d\ude0c"
 }

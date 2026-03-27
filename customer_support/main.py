@@ -2,14 +2,24 @@ import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.routing import APIRouter
+from pathlib import Path
+from dotenv import load_dotenv, find_dotenv
+from contextlib import asynccontextmanager
 
-# Import routers from each app
+# Load .env FIRST before importing anything
+load_dotenv(find_dotenv(), override=True)
+
+# Now import modules
 import app as audio_module
 import chat_app as chat_module
 import scoring_server as scoring_module
 
-main_app = FastAPI()
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    async with scoring_module.lifespan(application):
+        yield
+
+main_app = FastAPI(lifespan=lifespan)
 
 main_app.add_middleware(
     CORSMiddleware,
@@ -24,7 +34,6 @@ main_app.add_middleware(
 async def health():
     return {"status": "ok", "service": "AuraQ Combined Server"}
 
-# Mount all routes from each module's app
 for route in audio_module.app.routes:
     if hasattr(route, "path") and route.path not in ["/", "/health", "/docs", "/redoc", "/openapi.json"]:
         main_app.router.routes.append(route)

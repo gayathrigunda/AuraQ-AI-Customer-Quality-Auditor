@@ -714,7 +714,7 @@ const Dashboard = () => {
               ) : (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {policyStatus?.rag_ready === false
-                    ? "Set PINECONE_API_KEY in .env and install requirements_rag.txt"
+                    ? "Set PINECONE_API_KEY in .env and install requirements.txt"
                     : "Upload a PDF or TXT to score calls against your company policy"}
                 </p>
               )}
