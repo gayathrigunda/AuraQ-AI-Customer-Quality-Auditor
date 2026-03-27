@@ -1,4 +1,24 @@
+# At the very top of main.py, before any other imports
 import os
+from fastapi import FastAPI
+
+debug_app = FastAPI()
+
+@debug_app.get("/")
+@debug_app.get("/health") 
+def health():
+    return {
+        "status": "ok",
+        "DEEPGRAM_API_KEY": "SET" if os.environ.get("DEEPGRAM_API_KEY") else "MISSING",
+        "GROQ_API_KEY": "SET" if os.environ.get("GROQ_API_KEY") else "MISSING",
+        "PINECONE_API_KEY": "SET" if os.environ.get("PINECONE_API_KEY") else "MISSING",
+        "PINECONE_INDEX_NAME": os.environ.get("PINECONE_INDEX_NAME", "MISSING"),
+    }
+
+app = debug_app  
+
+import os
+import asyncio
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,31 +30,23 @@ from contextlib import asynccontextmanager
 load_dotenv(find_dotenv(), override=True)
 
 # Now import modules
-try:
-    import app as audio_module
-    print("[STARTUP] app.py imported OK")
-except Exception as e:
-    print(f"[STARTUP ERROR] app.py failed: {e}")
-    raise
-
-try:
-    import chat_app as chat_module
-    print("[STARTUP] chat_app.py imported OK")
-except Exception as e:
-    print(f"[STARTUP ERROR] chat_app.py failed: {e}")
-    raise
-
-try:
-    import scoring_server as scoring_module
-    print("[STARTUP] scoring_server.py imported OK")
-except Exception as e:
-    print(f"[STARTUP ERROR] scoring_server.py failed: {e}")
-    raise
+import app as audio_module
+import chat_app as chat_module
+import scoring_server as scoring_module
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    async with scoring_module.lifespan(application):
-        yield
+    # ✅ Start heavy loading in background — don't block port binding
+    asyncio.create_task(_background_startup(application))
+    yield
+
+async def _background_startup(application):
+    try:
+        async with scoring_module.lifespan(application):
+            # Keep the context alive — this will run until server shuts down
+            await asyncio.Event().wait()
+    except Exception as e:
+        print(f"[STARTUP] Background init error: {e}")
 
 main_app = FastAPI(lifespan=lifespan)
 
@@ -63,12 +75,7 @@ for route in scoring_module.app.routes:
     if hasattr(route, "path") and route.path not in ["/", "/health", "/docs", "/redoc", "/openapi.json"]:
         main_app.router.routes.append(route)
 
-
-
-
 app = main_app
-
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
