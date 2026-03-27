@@ -1,72 +1,72 @@
 [
   {
-    "file_name": "call log 1.m4a",
-    "timestamp": "2026-03-27T11:14:44.583242",
-    "empathy": 8,
-    "compliance": 9,
-    "resolution": 9,
+    "file_name": "human_chat.txt",
+    "timestamp": "2026-03-27T17:20:57.996255",
+    "empathy": 5,
+    "compliance": 6,
+    "resolution": 7,
     "efficiency": 8,
     "empathy_timeline": [
       {
         "stage": "Start",
-        "score": 8
+        "score": 5
       },
       {
         "stage": "Mid",
-        "score": 8
+        "score": 5
       },
       {
         "stage": "End",
-        "score": 9
+        "score": 5
       }
     ],
     "compliance_steps": [
       {
         "step": "ID Verify",
-        "score": 10
+        "score": 1
       },
       {
         "step": "Protocol",
-        "score": 10
+        "score": 5
       },
       {
         "step": "Closing",
-        "score": 10
+        "score": 5
       }
     ],
     "resolution_progress": [
       {
         "stage": "Discovery",
-        "score": 10
+        "score": 5
       },
       {
         "stage": "Fixing",
-        "score": 10
+        "score": 5
       },
       {
         "stage": "Solved",
-        "score": 10
+        "score": 5
       }
     ],
-    "customer_emotion": "Satisfied",
+    "customer_emotion": "Neutral",
     "emotion_confidence": 80,
-    "customer_satisfaction": "Satisfied",
-    "satisfaction_percentage": 80,
+    "customer_satisfaction": "Neutral",
+    "satisfaction_percentage": 60,
     "satisfaction_confidence": 80,
-    "reasoning": "The customer seemed satisfied with the resolution, saying 'yeah that does sound pretty good' and 'yeah let's go ahead and use a visa'. The agent also offered a special promotion and explained the benefits of updating the map, which suggests that the customer's issue was resolved to their satisfaction.",
+    "reasoning": "Customer's neutral tone and lack of strong emotional expression throughout the conversation justify the Neutral emotion score. The customer's neutral tone at the end of the conversation, saying 'okay thanks' without enthusiasm, justifies the Neutral satisfaction score.",
     "policy_violations": "None",
     "policy_context_used": true,
     "policy_chunks_count": 5,
     "efficiency_score": 5,
     "avg_response_time": 0.0,
     "bias": {
-      "name_neutrality": 9,
-      "language_neutrality": 10,
+      "name_neutrality": 4,
+      "language_neutrality": 1,
       "tone_consistency": 7,
-      "equal_effort": 10,
-      "overall_fairness": 9
+      "equal_effort": 7,
+      "overall_fairness": 5
     },
-    "customer_emotion_emoji": "\ud83d\ude0c",
-    "customer_satisfaction_emoji": "\ud83d\ude0c"
+    "customer_emotion_emoji": "\ud83d\ude10",
+    "customer_satisfaction_emoji": "\ud83d\ude10"
   }
 ]
