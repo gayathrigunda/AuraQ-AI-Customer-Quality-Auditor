@@ -13,7 +13,6 @@ __pycache__/
 
 # Data & Media (Local testing files)
 *.csv
-*.json
 *.mp3
 *.wav
 *.m4a
